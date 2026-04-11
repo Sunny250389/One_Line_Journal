@@ -27,6 +27,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -40,6 +41,7 @@ fun HistoryScreen(
     onNavigateBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
 
     Scaffold(
         modifier = Modifier
@@ -78,7 +80,8 @@ fun HistoryScreen(
             JournalEntryList(
                 entries = state.entries,
                 emptyMessage = "No entries yet. Your journal will appear here after your first line.",
-                onToggleFavorite = viewModel::toggleFavorite
+                onToggleFavorite = viewModel::toggleFavorite,
+                onShareEntry = { shareJournalEntryCard(context, it) }
             )
         }
     }
@@ -90,6 +93,7 @@ fun FavoritesScreen(
     onNavigateBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     val favoriteEntries = state.entries.filter { it.isFavorite }
 
     Scaffold(
@@ -125,7 +129,8 @@ fun FavoritesScreen(
             JournalEntryList(
                 entries = favoriteEntries,
                 emptyMessage = "No favorites yet. Tap a heart in History to save one here.",
-                onToggleFavorite = viewModel::toggleFavorite
+                onToggleFavorite = viewModel::toggleFavorite,
+                onShareEntry = { shareJournalEntryCard(context, it) }
             )
         }
     }
@@ -135,7 +140,8 @@ fun FavoritesScreen(
 private fun JournalEntryList(
     entries: List<JournalEntry>,
     emptyMessage: String,
-    onToggleFavorite: (JournalEntry) -> Unit
+    onToggleFavorite: (JournalEntry) -> Unit,
+    onShareEntry: (JournalEntry) -> Unit
 ) {
     if (entries.isEmpty()) {
         Text(
@@ -153,7 +159,8 @@ private fun JournalEntryList(
             ) { entry ->
                 JournalEntryCard(
                     entry = entry,
-                    onToggleFavorite = onToggleFavorite
+                    onToggleFavorite = onToggleFavorite,
+                    onShareEntry = onShareEntry
                 )
             }
         }
@@ -163,7 +170,8 @@ private fun JournalEntryList(
 @Composable
 private fun JournalEntryCard(
     entry: JournalEntry,
-    onToggleFavorite: (JournalEntry) -> Unit
+    onToggleFavorite: (JournalEntry) -> Unit,
+    onShareEntry: (JournalEntry) -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(20.dp),
@@ -186,6 +194,13 @@ private fun JournalEntryCard(
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold
                 )
+                IconButton(onClick = { onShareEntry(entry) }) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_share),
+                        contentDescription = "Share as card",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 IconButton(onClick = { onToggleFavorite(entry) }) {
                     Icon(
                         painter = painterResource(
