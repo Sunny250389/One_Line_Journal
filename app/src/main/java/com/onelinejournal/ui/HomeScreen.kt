@@ -128,7 +128,7 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp)
             ) {
-                Text(if (todaysEntry == null) "Save today's line" else "Update today's line")
+                Text(if (todaysEntry == null) "Save" else "Update")
             }
 
             if (todaysEntry != null) {
