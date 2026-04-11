@@ -5,7 +5,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.onelinejournal.data.JournalEntry
 import com.onelinejournal.data.JournalRepository
-import java.time.LocalDate
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -14,9 +16,10 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 private const val MAX_ENTRY_LENGTH = 120
+private const val DATE_PATTERN = "yyyy-MM-dd"
 
 data class JournalUiState(
-    val today: LocalDate = LocalDate.now(),
+    val today: String = todayKey(),
     val input: String = "",
     val streakCount: Int = 0,
     val todaysEntry: JournalEntry? = null,
@@ -39,9 +42,8 @@ class JournalViewModel(
         draft,
         isSaving
     ) { entries, input, saving ->
-        val today = LocalDate.now()
-        val todayKey = today.toString()
-        val todaysEntry = entries.firstOrNull { it.date == todayKey }
+        val today = todayKey()
+        val todaysEntry = entries.firstOrNull { it.date == today }
         val displayInput = input ?: todaysEntry?.content.orEmpty()
 
         JournalUiState(
@@ -71,8 +73,9 @@ class JournalViewModel(
             isSaving.value = true
             repository.saveEntry(
                 JournalEntry(
-                    date = current.today.toString(),
-                    content = content
+                    date = current.today,
+                    content = content,
+                    isFavorite = current.todaysEntry?.isFavorite ?: false
                 )
             )
             draft.value = null
@@ -80,27 +83,43 @@ class JournalViewModel(
         }
     }
 
+    fun toggleFavorite(entry: JournalEntry) {
+        viewModelScope.launch {
+            repository.updateFavorite(entry.date, !entry.isFavorite)
+        }
+    }
+
     private fun calculateStreak(entries: List<JournalEntry>): Int {
         if (entries.isEmpty()) return 0
 
         val entryDates = entries
-            .map { LocalDate.parse(it.date) }
+            .map { it.date }
             .toSet()
 
         var streak = 0
+        val today = Calendar.getInstance()
+        val yesterday = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, -1)
+        }
         var cursor = when {
-            entryDates.contains(LocalDate.now()) -> LocalDate.now()
-            entryDates.contains(LocalDate.now().minusDays(1)) -> LocalDate.now().minusDays(1)
+            entryDates.contains(formatDate(today)) -> today
+            entryDates.contains(formatDate(yesterday)) -> yesterday
             else -> return 0
         }
 
-        while (entryDates.contains(cursor)) {
+        while (entryDates.contains(formatDate(cursor))) {
             streak++
-            cursor = cursor.minusDays(1)
+            cursor.add(Calendar.DAY_OF_YEAR, -1)
         }
 
         return streak
     }
+}
+
+private fun todayKey(): String = formatDate(Calendar.getInstance())
+
+private fun formatDate(calendar: Calendar): String {
+    return SimpleDateFormat(DATE_PATTERN, Locale.US).format(calendar.time)
 }
 
 class JournalViewModelFactory(

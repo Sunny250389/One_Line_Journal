@@ -7,5 +7,6 @@ import androidx.room.PrimaryKey
 data class JournalEntry(
     @PrimaryKey val date: String,
     val content: String,
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val isFavorite: Boolean = false
 )

@@ -8,6 +8,7 @@ import androidx.navigation.compose.rememberNavController
 
 private const val HOME_ROUTE = "home"
 private const val HISTORY_ROUTE = "history"
+private const val FAVORITES_ROUTE = "favorites"
 
 @Composable
 fun JournalApp(
@@ -24,11 +25,19 @@ fun JournalApp(
         composable(HOME_ROUTE) {
             HomeScreen(
                 viewModel = viewModel,
-                onOpenHistory = { navController.navigate(HISTORY_ROUTE) }
+                onOpenHistory = { navController.navigate(HISTORY_ROUTE) },
+                onOpenFavorites = { navController.navigate(FAVORITES_ROUTE) }
             )
         }
         composable(HISTORY_ROUTE) {
             HistoryScreen(
+                viewModel = viewModel,
+                onOpenFavorites = { navController.navigate(FAVORITES_ROUTE) },
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        composable(FAVORITES_ROUTE) {
+            FavoritesScreen(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() }
             )

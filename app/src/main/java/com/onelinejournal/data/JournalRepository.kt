@@ -10,4 +10,8 @@ class JournalRepository(
     suspend fun saveEntry(entry: JournalEntry) {
         journalEntryDao.upsertEntry(entry)
     }
+
+    suspend fun updateFavorite(date: String, isFavorite: Boolean) {
+        journalEntryDao.updateFavorite(date, isFavorite)
+    }
 }

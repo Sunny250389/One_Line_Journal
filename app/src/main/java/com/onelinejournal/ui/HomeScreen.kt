@@ -32,7 +32,8 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun HomeScreen(
     viewModel: JournalViewModel,
-    onOpenHistory: () -> Unit
+    onOpenHistory: () -> Unit,
+    onOpenFavorites: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val todaysEntry = state.todaysEntry
@@ -69,8 +70,13 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                TextButton(onClick = onOpenHistory) {
-                    Text("History")
+                Row {
+                    TextButton(onClick = onOpenFavorites) {
+                        Text("Favorites")
+                    }
+                    TextButton(onClick = onOpenHistory) {
+                        Text("History")
+                    }
                 }
             }
 
