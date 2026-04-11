@@ -72,6 +72,10 @@ fun HistoryScreen(
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(modifier = Modifier.weight(1f))
+                ThemeColorMenu(
+                    selectedTheme = state.accentTheme,
+                    onThemeSelected = viewModel::setAccentTheme
+                )
                 TextButton(onClick = onOpenFavorites) {
                     Text("Favorites")
                 }
