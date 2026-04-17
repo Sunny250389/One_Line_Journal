@@ -21,7 +21,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -37,13 +36,14 @@ import com.onelinejournal.data.JournalEntry
 @Composable
 fun HistoryScreen(
     viewModel: JournalViewModel,
-    onOpenFavorites: () -> Unit,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    bottomBar: @Composable () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
     Scaffold(
+        bottomBar = bottomBar,
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
@@ -72,13 +72,6 @@ fun HistoryScreen(
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(modifier = Modifier.weight(1f))
-                ThemeColorMenu(
-                    selectedTheme = state.accentTheme,
-                    onThemeSelected = viewModel::setAccentTheme
-                )
-                TextButton(onClick = onOpenFavorites) {
-                    Text("Favorites")
-                }
             }
 
             JournalEntryList(
@@ -94,13 +87,15 @@ fun HistoryScreen(
 @Composable
 fun FavoritesScreen(
     viewModel: JournalViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    bottomBar: @Composable () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val favoriteEntries = state.entries.filter { it.isFavorite }
 
     Scaffold(
+        bottomBar = bottomBar,
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()

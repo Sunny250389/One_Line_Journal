@@ -20,6 +20,22 @@ import kotlinx.coroutines.launch
 private const val MAX_ENTRY_LENGTH = 120
 private const val DATE_PATTERN = "yyyy-MM-dd"
 private const val THEME_KEY = "accent_theme"
+private const val JOURNAL_FONT_KEY = "journal_font"
+private const val JOURNAL_TEXT_SIZE_KEY = "journal_text_size"
+private const val REMINDER_TIME_KEY = "reminder_time"
+
+enum class JournalFont(val label: String) {
+    Sans("Sans"),
+    Serif("Serif"),
+    Mono("Mono"),
+    Casual("Casual");
+
+    companion object {
+        fun fromName(name: String?): JournalFont {
+            return values().firstOrNull { it.name == name } ?: Sans
+        }
+    }
+}
 
 data class JournalUiState(
     val today: String = todayKey(),
@@ -28,11 +44,21 @@ data class JournalUiState(
     val todaysEntry: JournalEntry? = null,
     val entries: List<JournalEntry> = emptyList(),
     val isSaving: Boolean = false,
-    val accentTheme: AccentTheme = AccentTheme.Green
+    val accentTheme: AccentTheme = AccentTheme.Green,
+    val journalFont: JournalFont = JournalFont.Sans,
+    val journalTextSize: Int = 16,
+    val reminderTime: String? = null
 ) {
     val charactersRemaining: Int = MAX_ENTRY_LENGTH - input.length
     val canSave: Boolean = input.isNotBlank() && input.length <= MAX_ENTRY_LENGTH && !isSaving
 }
+
+private data class JournalSettings(
+    val accentTheme: AccentTheme,
+    val journalFont: JournalFont,
+    val journalTextSize: Int,
+    val reminderTime: String?
+)
 
 class JournalViewModel(
     private val repository: JournalRepository,
@@ -44,13 +70,35 @@ class JournalViewModel(
     private val accentTheme = MutableStateFlow(
         AccentTheme.fromName(preferences.getString(THEME_KEY, AccentTheme.Green.name))
     )
+    private val journalFont = MutableStateFlow(
+        JournalFont.fromName(preferences.getString(JOURNAL_FONT_KEY, JournalFont.Sans.name))
+    )
+    private val journalTextSize = MutableStateFlow(
+        preferences.getInt(JOURNAL_TEXT_SIZE_KEY, 16)
+    )
+    private val reminderTime = MutableStateFlow(
+        preferences.getString(REMINDER_TIME_KEY, null)
+    )
+    private val settingsState = combine(
+        accentTheme,
+        journalFont,
+        journalTextSize,
+        reminderTime
+    ) { theme, font, textSize, reminder ->
+        JournalSettings(
+            accentTheme = theme,
+            journalFont = font,
+            journalTextSize = textSize,
+            reminderTime = reminder
+        )
+    }
 
     val uiState: StateFlow<JournalUiState> = combine(
         repository.observeEntries(),
         draft,
         isSaving,
-        accentTheme
-    ) { entries, input, saving, theme ->
+        settingsState
+    ) { entries, input, saving, settings ->
         val today = todayKey()
         val todaysEntry = entries.firstOrNull { it.date == today }
         val displayInput = input ?: todaysEntry?.content.orEmpty()
@@ -62,7 +110,10 @@ class JournalViewModel(
             todaysEntry = todaysEntry,
             entries = entries,
             isSaving = saving,
-            accentTheme = theme
+            accentTheme = settings.accentTheme,
+            journalFont = settings.journalFont,
+            journalTextSize = settings.journalTextSize,
+            reminderTime = settings.reminderTime
         )
     }.stateIn(
         scope = viewModelScope,
@@ -102,6 +153,22 @@ class JournalViewModel(
     fun setAccentTheme(theme: AccentTheme) {
         accentTheme.value = theme
         preferences.edit().putString(THEME_KEY, theme.name).apply()
+    }
+
+    fun setJournalFont(font: JournalFont) {
+        journalFont.value = font
+        preferences.edit().putString(JOURNAL_FONT_KEY, font.name).apply()
+    }
+
+    fun setJournalTextSize(size: Int) {
+        val safeSize = size.coerceIn(14, 24)
+        journalTextSize.value = safeSize
+        preferences.edit().putInt(JOURNAL_TEXT_SIZE_KEY, safeSize).apply()
+    }
+
+    fun setReminderTime(time: String) {
+        reminderTime.value = time
+        preferences.edit().putString(REMINDER_TIME_KEY, time).apply()
     }
 
     private fun calculateStreak(entries: List<JournalEntry>): Int {
