@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,14 +8,31 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        load(FileInputStream(keystorePropertiesFile))
+    }
+}
+
+fun releaseSigningProperty(name: String): String? {
+    return keystoreProperties.getProperty(name) ?: System.getenv(name)
+}
+
+val hasReleaseSigningConfig =
+    releaseSigningProperty("RELEASE_STORE_FILE") != null &&
+        releaseSigningProperty("RELEASE_STORE_PASSWORD") != null &&
+        releaseSigningProperty("RELEASE_KEY_ALIAS") != null &&
+        releaseSigningProperty("RELEASE_KEY_PASSWORD") != null
+
 android {
     namespace = "com.onelinejournal"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.onelinejournal"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
@@ -22,9 +42,34 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val storeFilePath = releaseSigningProperty("RELEASE_STORE_FILE")
+            val storePasswordValue = releaseSigningProperty("RELEASE_STORE_PASSWORD")
+            val keyAliasValue = releaseSigningProperty("RELEASE_KEY_ALIAS")
+            val keyPasswordValue = releaseSigningProperty("RELEASE_KEY_PASSWORD")
+
+            if (
+                storeFilePath != null &&
+                storePasswordValue != null &&
+                keyAliasValue != null &&
+                keyPasswordValue != null
+            ) {
+                storeFile = rootProject.file(storeFilePath)
+                storePassword = storePasswordValue
+                keyAlias = keyAliasValue
+                keyPassword = keyPasswordValue
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            if (hasReleaseSigningConfig) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -33,6 +78,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -70,6 +116,8 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
+
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
     debugImplementation(composeBom)
     debugImplementation("androidx.compose.ui:ui-tooling")

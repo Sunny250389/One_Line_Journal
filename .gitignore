@@ -8,3 +8,6 @@
 /build/
 /app/build/
 captures/
+keystore.properties
+*.jks
+*.keystore
