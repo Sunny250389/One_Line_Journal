@@ -1,0 +1,40 @@
+Privacy Policy for One Line Journal
+Effective Date: May 3, 2026
+
+One Line Journal ("the App") respects your privacy. This Privacy Policy explains what information the App handles and how it is used.
+
+1) Information We Collect
+- Journal content you type in the App.
+- Basic app preferences/settings needed for functionality.
+
+2) How Information Is Used
+- Your journal data is used only to provide core journaling features.
+- Data is stored locally on your device unless you choose to export/share it.
+- We do not sell your personal information.
+
+3) Data Sharing
+- The App does not share your journal content with third parties by default.
+- If you use Android system features (such as backups or sharing), data handling by those services is governed by their own privacy terms.
+
+4) Data Retention
+- Your entries remain on your device until you delete them or uninstall the App.
+- Uninstalling the App may remove locally stored data, subject to device behavior.
+
+5) Security
+- We take reasonable steps in-app to protect your data. However, no method of storage or transmission is 100% secure.
+
+6) Children's Privacy
+- The App is not directed to children under 13, and we do not knowingly collect personal information from children.
+
+7) Your Choices
+- You may edit or delete entries within the App.
+- You may uninstall the App at any time to stop further data processing by the App.
+
+8) Third-Party Services
+- If the App integrates third-party services in future versions (analytics, crash reporting, cloud sync, ads), this policy will be updated accordingly.
+
+9) Changes to This Policy
+- We may update this Privacy Policy from time to time. The updated version will be posted with a new Effective Date.
+
+10) Contact
+For privacy questions, please contact the app publisher/developer through the app store listing or repository contact details.
