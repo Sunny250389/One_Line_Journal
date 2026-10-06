@@ -5,7 +5,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
@@ -17,13 +18,15 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.onelinejournal.ui.theme.AccentTheme
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ThemeColorMenu(
     selectedTheme: AccentTheme,
     onThemeSelected: (AccentTheme) -> Unit
 ) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         AccentTheme.values().forEach { theme ->
             val selected = theme == selectedTheme

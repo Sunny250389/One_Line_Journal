@@ -10,9 +10,15 @@ interface JournalEntryDao {
     @Query("SELECT * FROM journal_entries ORDER BY date DESC")
     fun observeAllEntries(): Flow<List<JournalEntry>>
 
+    @Query("SELECT * FROM journal_entries ORDER BY date DESC")
+    suspend fun getAllEntries(): List<JournalEntry>
+
     @Query("UPDATE journal_entries SET isFavorite = :isFavorite WHERE date = :date")
     suspend fun updateFavorite(date: String, isFavorite: Boolean)
 
     @Upsert
     suspend fun upsertEntry(entry: JournalEntry)
+
+    @Upsert
+    suspend fun upsertEntries(entries: List<JournalEntry>)
 }

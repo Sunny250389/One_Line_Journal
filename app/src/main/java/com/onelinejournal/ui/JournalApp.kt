@@ -23,6 +23,8 @@ private const val SETTINGS_ROUTE = "settings"
 @Composable
 fun JournalApp(
     viewModel: JournalViewModel,
+    onGoogleSignIn: () -> Unit,
+    onGoogleSignOut: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val navController = rememberNavController()
@@ -82,6 +84,8 @@ fun JournalApp(
         composable(SETTINGS_ROUTE) {
             SettingsScreen(
                 viewModel = viewModel,
+                onGoogleSignIn = onGoogleSignIn,
+                onGoogleSignOut = onGoogleSignOut,
                 bottomBar = bottomBar
             )
         }

@@ -4,12 +4,17 @@ import android.content.SharedPreferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.onelinejournal.auth.GoogleAccountSession
+import com.onelinejournal.backup.JournalBackupRepository
 import com.onelinejournal.data.JournalEntry
 import com.onelinejournal.data.JournalRepository
 import com.onelinejournal.ui.theme.AccentTheme
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,18 +28,28 @@ private const val THEME_KEY = "accent_theme"
 private const val JOURNAL_FONT_KEY = "journal_font"
 private const val JOURNAL_TEXT_SIZE_KEY = "journal_text_size"
 private const val REMINDER_TIME_KEY = "reminder_time"
+private const val LAST_BACKUP_KEY = "google_backup_last_sync"
+private const val PUSH_DEBOUNCE_MS = 1_500L
 
 enum class JournalFont(val label: String) {
     Sans("Sans"),
     Serif("Serif"),
     Mono("Mono"),
-    Casual("Casual");
+    Casual("Casual"),
+    Condensed("Condensed");
 
     companion object {
         fun fromName(name: String?): JournalFont {
             return values().firstOrNull { it.name == name } ?: Sans
         }
     }
+}
+
+enum class BackupSyncState {
+    Idle,
+    Syncing,
+    Success,
+    Error
 }
 
 data class JournalUiState(
@@ -47,7 +62,11 @@ data class JournalUiState(
     val accentTheme: AccentTheme = AccentTheme.Green,
     val journalFont: JournalFont = JournalFont.Sans,
     val journalTextSize: Int = 16,
-    val reminderTime: String? = null
+    val reminderTime: String? = null,
+    val signedInEmail: String? = null,
+    val lastBackupAt: Long? = null,
+    val backupSyncState: BackupSyncState = BackupSyncState.Idle,
+    val backupError: String? = null
 ) {
     val charactersRemaining: Int = MAX_ENTRY_LENGTH - input.length
     val canSave: Boolean = input.isNotBlank() && input.length <= MAX_ENTRY_LENGTH && !isSaving
@@ -60,9 +79,17 @@ private data class JournalSettings(
     val reminderTime: String?
 )
 
+private data class BackupUi(
+    val signedInEmail: String?,
+    val lastBackupAt: Long?,
+    val backupSyncState: BackupSyncState,
+    val backupError: String?
+)
+
 class JournalViewModel(
     private val repository: JournalRepository,
-    private val preferences: SharedPreferences
+    private val preferences: SharedPreferences,
+    private val backupRepository: JournalBackupRepository
 ) : ViewModel() {
 
     private val draft = MutableStateFlow<String?>(null)
@@ -79,6 +106,17 @@ class JournalViewModel(
     private val reminderTime = MutableStateFlow(
         preferences.getString(REMINDER_TIME_KEY, null)
     )
+    private val signedInEmail = MutableStateFlow(
+        preferences.getString(GoogleAccountSession.EMAIL_KEY, null)
+    )
+    private val lastBackupAt = MutableStateFlow(
+        preferences.getLong(LAST_BACKUP_KEY, 0L).takeIf { it > 0L }
+    )
+    private val backupSyncState = MutableStateFlow(BackupSyncState.Idle)
+    private val backupError = MutableStateFlow<String?>(null)
+    private var pushJob: Job? = null
+    private var completedStartupSync = false
+
     private val settingsState = combine(
         accentTheme,
         journalFont,
@@ -93,12 +131,27 @@ class JournalViewModel(
         )
     }
 
+    private val backupState = combine(
+        signedInEmail,
+        lastBackupAt,
+        backupSyncState,
+        backupError
+    ) { email, lastBackup, syncState, error ->
+        BackupUi(
+            signedInEmail = email,
+            lastBackupAt = lastBackup,
+            backupSyncState = syncState,
+            backupError = error
+        )
+    }
+
     val uiState: StateFlow<JournalUiState> = combine(
         repository.observeEntries(),
         draft,
         isSaving,
-        settingsState
-    ) { entries, input, saving, settings ->
+        settingsState,
+        backupState
+    ) { entries, input, saving, settings, backup ->
         val today = todayKey()
         val todaysEntry = entries.firstOrNull { it.date == today }
         val displayInput = input ?: todaysEntry?.content.orEmpty()
@@ -113,7 +166,11 @@ class JournalViewModel(
             accentTheme = settings.accentTheme,
             journalFont = settings.journalFont,
             journalTextSize = settings.journalTextSize,
-            reminderTime = settings.reminderTime
+            reminderTime = settings.reminderTime,
+            signedInEmail = backup.signedInEmail,
+            lastBackupAt = backup.lastBackupAt,
+            backupSyncState = backup.backupSyncState,
+            backupError = backup.backupError
         )
     }.stateIn(
         scope = viewModelScope,
@@ -141,12 +198,19 @@ class JournalViewModel(
             )
             draft.value = null
             isSaving.value = false
+            schedulePush()
         }
     }
 
     fun toggleFavorite(entry: JournalEntry) {
         viewModelScope.launch {
-            repository.updateFavorite(entry.date, !entry.isFavorite)
+            repository.saveEntry(
+                entry.copy(
+                    isFavorite = !entry.isFavorite,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+            schedulePush()
         }
     }
 
@@ -169,6 +233,73 @@ class JournalViewModel(
     fun setReminderTime(time: String) {
         reminderTime.value = time
         preferences.edit().putString(REMINDER_TIME_KEY, time).apply()
+    }
+
+    fun onGoogleSignedIn(email: String) {
+        signedInEmail.value = email
+        backupError.value = null
+        syncFromCloud()
+    }
+
+    fun onGoogleSignedOut() {
+        pushJob?.cancel()
+        signedInEmail.value = null
+        lastBackupAt.value = null
+        backupSyncState.value = BackupSyncState.Idle
+        backupError.value = null
+        preferences.edit().remove(LAST_BACKUP_KEY).apply()
+    }
+
+    fun reportBackupError(message: String?) {
+        backupSyncState.value = BackupSyncState.Error
+        backupError.value = message ?: "Backup failed"
+    }
+
+    fun syncOnStart() {
+        if (completedStartupSync) return
+        completedStartupSync = true
+        syncFromCloud()
+    }
+
+    fun syncFromCloud() {
+        if (signedInEmail.value.isNullOrBlank()) return
+        viewModelScope.launch {
+            runBackup { backupRepository.pullMergePush(allowUi = false) }
+        }
+    }
+
+    fun backupNow() {
+        if (signedInEmail.value.isNullOrBlank()) return
+        pushJob?.cancel()
+        viewModelScope.launch {
+            runBackup { backupRepository.pullMergePush(allowUi = true) }
+        }
+    }
+
+    private fun schedulePush() {
+        if (signedInEmail.value.isNullOrBlank()) return
+        pushJob?.cancel()
+        pushJob = viewModelScope.launch {
+            delay(PUSH_DEBOUNCE_MS)
+            runBackup { backupRepository.push() }
+        }
+    }
+
+    private suspend fun runBackup(block: suspend () -> Unit) {
+        backupSyncState.value = BackupSyncState.Syncing
+        backupError.value = null
+        try {
+            block()
+            val syncedAt = System.currentTimeMillis()
+            lastBackupAt.value = syncedAt
+            preferences.edit().putLong(LAST_BACKUP_KEY, syncedAt).apply()
+            backupSyncState.value = BackupSyncState.Success
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            backupSyncState.value = BackupSyncState.Error
+            backupError.value = error.message ?: "Backup failed"
+        }
     }
 
     private fun calculateStreak(entries: List<JournalEntry>): Int {
@@ -206,12 +337,13 @@ private fun formatDate(calendar: Calendar): String {
 
 class JournalViewModelFactory(
     private val repository: JournalRepository,
-    private val preferences: SharedPreferences
+    private val preferences: SharedPreferences,
+    private val backupRepository: JournalBackupRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(JournalViewModel::class.java)) {
-            return JournalViewModel(repository, preferences) as T
+            return JournalViewModel(repository, preferences, backupRepository) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

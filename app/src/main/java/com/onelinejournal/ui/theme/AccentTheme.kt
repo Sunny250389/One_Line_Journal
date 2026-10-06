@@ -12,7 +12,9 @@ enum class AccentTheme(
     Orange("Orange", Color(0xFFE07A2F)),
     Pink("Pink", Color(0xFFD94F8C)),
     Monochrome("Monochrome", Color(0xFF111111)),
-    Teal("Teal", Color(0xFF00897B));
+    Teal("Teal", Color(0xFF00897B)),
+    Rose("Rose", Color(0xFFC0395A)),
+    Amber("Amber", Color(0xFFD97706));
 
     companion object {
         fun fromName(name: String?): AccentTheme {

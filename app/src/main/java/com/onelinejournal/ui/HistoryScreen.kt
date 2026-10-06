@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.onelinejournal.R
 import com.onelinejournal.data.JournalEntry
 
@@ -76,9 +77,11 @@ fun HistoryScreen(
 
             JournalEntryList(
                 entries = state.entries,
+                journalFont = state.journalFont,
+                journalTextSize = state.journalTextSize,
                 emptyMessage = "No entries yet. Your journal will appear here after your first line.",
                 onToggleFavorite = viewModel::toggleFavorite,
-                onShareEntry = { shareJournalEntryCard(context, it) }
+                onShareEntry = { shareJournalEntryCard(context, it, state.journalFont) }
             )
         }
     }
@@ -127,9 +130,11 @@ fun FavoritesScreen(
 
             JournalEntryList(
                 entries = favoriteEntries,
+                journalFont = state.journalFont,
+                journalTextSize = state.journalTextSize,
                 emptyMessage = "No favorites yet. Tap a heart in History to save one here.",
                 onToggleFavorite = viewModel::toggleFavorite,
-                onShareEntry = { shareJournalEntryCard(context, it) }
+                onShareEntry = { shareJournalEntryCard(context, it, state.journalFont) }
             )
         }
     }
@@ -138,6 +143,8 @@ fun FavoritesScreen(
 @Composable
 private fun JournalEntryList(
     entries: List<JournalEntry>,
+    journalFont: JournalFont,
+    journalTextSize: Int,
     emptyMessage: String,
     onToggleFavorite: (JournalEntry) -> Unit,
     onShareEntry: (JournalEntry) -> Unit
@@ -158,6 +165,8 @@ private fun JournalEntryList(
             ) { entry ->
                 JournalEntryCard(
                     entry = entry,
+                    journalFont = journalFont,
+                    journalTextSize = journalTextSize,
                     onToggleFavorite = onToggleFavorite,
                     onShareEntry = onShareEntry
                 )
@@ -169,6 +178,8 @@ private fun JournalEntryList(
 @Composable
 private fun JournalEntryCard(
     entry: JournalEntry,
+    journalFont: JournalFont,
+    journalTextSize: Int,
     onToggleFavorite: (JournalEntry) -> Unit,
     onShareEntry: (JournalEntry) -> Unit
 ) {
@@ -224,7 +235,10 @@ private fun JournalEntryCard(
             }
             Text(
                 text = entry.content,
-                style = MaterialTheme.typography.bodyLarge
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontFamily = journalFont.toFontFamily(),
+                    fontSize = journalTextSize.sp
+                )
             )
         }
     }

@@ -22,8 +22,8 @@ private const val CARD_HEIGHT = 1350
 private const val CARD_PADDING = 104f
 private const val BRANDING = "\u2014 One Line Journal"
 
-fun shareJournalEntryCard(context: Context, entry: JournalEntry) {
-    val imageUri = createJournalEntryCardUri(context, entry)
+fun shareJournalEntryCard(context: Context, entry: JournalEntry, journalFont: JournalFont = JournalFont.Sans) {
+    val imageUri = createJournalEntryCardUri(context, entry, journalFont)
     val shareIntent = Intent(Intent.ACTION_SEND).apply {
         type = "image/png"
         putExtra(Intent.EXTRA_STREAM, imageUri)
@@ -37,8 +37,8 @@ fun shareJournalEntryCard(context: Context, entry: JournalEntry) {
     )
 }
 
-private fun createJournalEntryCardUri(context: Context, entry: JournalEntry): Uri {
-    val bitmap = createJournalEntryCard(entry)
+private fun createJournalEntryCardUri(context: Context, entry: JournalEntry, journalFont: JournalFont): Uri {
+    val bitmap = createJournalEntryCard(entry, journalFont)
     val shareDir = File(context.cacheDir, "shared_cards").apply {
         mkdirs()
     }
@@ -56,7 +56,17 @@ private fun createJournalEntryCardUri(context: Context, entry: JournalEntry): Ur
     )
 }
 
-private fun createJournalEntryCard(entry: JournalEntry): Bitmap {
+private fun journalFontToTypeface(font: JournalFont): android.graphics.Typeface {
+    return when (font) {
+        JournalFont.Sans -> android.graphics.Typeface.SANS_SERIF
+        JournalFont.Serif -> android.graphics.Typeface.SERIF
+        JournalFont.Mono -> android.graphics.Typeface.MONOSPACE
+        JournalFont.Casual -> android.graphics.Typeface.create("cursive", android.graphics.Typeface.NORMAL)
+        JournalFont.Condensed -> android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.NORMAL)
+    }
+}
+
+private fun createJournalEntryCard(entry: JournalEntry, journalFont: JournalFont): Bitmap {
     val bitmap = Bitmap.createBitmap(CARD_WIDTH, CARD_HEIGHT, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
 
@@ -84,7 +94,7 @@ private fun createJournalEntryCard(entry: JournalEntry): Bitmap {
     val entryPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(35, 31, 26)
         textSize = 62f
-        typeface = android.graphics.Typeface.create(android.graphics.Typeface.SERIF, android.graphics.Typeface.NORMAL)
+        typeface = journalFontToTypeface(journalFont)
     }
     val brandingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(108, 91, 67)

@@ -15,6 +15,19 @@ val keystoreProperties = Properties().apply {
     }
 }
 
+val localPropertiesFile = rootProject.file("local.properties")
+val localProperties = Properties().apply {
+    if (localPropertiesFile.exists()) {
+        load(FileInputStream(localPropertiesFile))
+    }
+}
+
+val googleWebClientId =
+    localProperties.getProperty("GOOGLE_WEB_CLIENT_ID")
+        ?: keystoreProperties.getProperty("GOOGLE_WEB_CLIENT_ID")
+        ?: System.getenv("GOOGLE_WEB_CLIENT_ID")
+        ?: "YOUR_WEB_CLIENT_ID.apps.googleusercontent.com"
+
 fun releaseSigningProperty(name: String): String? {
     return keystoreProperties.getProperty(name) ?: System.getenv(name)
 }
@@ -40,6 +53,8 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        resValue("string", "default_web_client_id", googleWebClientId)
     }
 
     signingConfigs {
@@ -116,6 +131,13 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
+
+    implementation("androidx.credentials:credentials:1.5.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    implementation("com.google.android.gms:play-services-auth:21.3.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 

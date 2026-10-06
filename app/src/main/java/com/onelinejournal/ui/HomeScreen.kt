@@ -441,11 +441,16 @@ private fun JournalCalendar(entries: List<JournalEntry>) {
     }
 }
 
-private fun JournalFont.toFontFamily(): FontFamily {
+internal fun JournalFont.toFontFamily(): FontFamily {
     return when (this) {
         JournalFont.Sans -> FontFamily.SansSerif
         JournalFont.Serif -> FontFamily.Serif
         JournalFont.Mono -> FontFamily.Monospace
         JournalFont.Casual -> FontFamily.Cursive
+        JournalFont.Condensed -> FontFamily(
+            androidx.compose.ui.text.font.Font(
+                familyName = androidx.compose.ui.text.font.DeviceFontFamilyName("sans-serif-condensed")
+            )
+        )
     }
 }
