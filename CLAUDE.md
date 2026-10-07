@@ -58,7 +58,8 @@ app/src/main/java/com/onelinejournal/
 
 - **One entry per day:** `JournalEntry.date` (format `yyyy-MM-dd`) is the primary key; saving overwrites the day.
 - **120-character limit:** Enforced in `JournalViewModel` (`MAX_ENTRY_LENGTH = 120`).
-- **Backup strategy:** Pull-merge-push via Google Drive `appDataFolder`. Conflict resolution uses `updatedAt` timestamp (latest wins). Auto-push triggers 1.5 s after any save/toggle (`PUSH_DEBOUNCE_MS`).
+- **Backup strategy:** Pull-merge-push via Google Drive `appDataFolder`. Conflict resolution uses `updatedAt` (latest wins). Backup is automatic — a push fires 1.5 s after any save/toggle (`PUSH_DEBOUNCE_MS`), on app start, and on sign-in. `Backup now` is a manual override, needed today only because failed pushes are not retried (see Known gaps).
+- **Account isolation:** `journal_owner_email` in `SharedPreferences` records which account local entries belong to. Signing in as a *different* account calls `pullReplace` (cloud wins, local discarded) instead of `pullMergePush`, so one account's entries are never uploaded into another's Drive. Guest → first sign-in still merges, which is the intended migration path. `DriveAppDataClient.cachedFileId` must be reset on account change — the file id is per-account and resolves to an unreadable file under a new token.
 - **Streak:** Calculated in ViewModel from the sorted entry list; counts consecutive days ending today or yesterday.
 - **Theming:** `AccentTheme` enum drives Material3 color scheme; persisted in `SharedPreferences`.
 - **Fonts:** `JournalFont` enum (Sans/Serif/Mono/Casual/Condensed); persists across Home, History, Favorites, and the share card image. `toFontFamily()` in `HomeScreen.kt` is `internal` — shared across all screens. Condensed uses `DeviceFontFamilyName("sans-serif-condensed")` — no bundled font files needed.
@@ -77,6 +78,38 @@ GOOGLE_WEB_CLIENT_ID=...apps.googleusercontent.com
 ```
 
 `GOOGLE_WEB_CLIENT_ID` can also be set in `local.properties` or as an environment variable. It becomes the `default_web_client_id` string resource used by Google Sign-In.
+
+## Google Sign-In setup
+
+Requires **two** OAuth clients in the same Google Cloud project. Mixing them up is the main failure mode:
+
+| Client type | Purpose | Referenced in code? |
+|---|---|---|
+| **Web application** | The "server client ID" passed to `GetSignInWithGoogleOption.Builder()`. Goes in `local.properties` as `GOOGLE_WEB_CLIENT_ID`. | Yes — as `default_web_client_id` |
+| **Android** | Validates that a request claiming to be `com.onelinejournal`, signed with the registered key, is genuine. | No — server-side only |
+
+Android client needs package `com.onelinejournal` plus the SHA-1 of the signing key. For debug builds, read it from the APK itself rather than guessing at a keystore:
+
+```bash
+apksigner verify --print-certs app/build/outputs/apk/debug/app-debug.apk
+```
+
+Symptoms and causes:
+
+- **`[28444] Developer console is not set up correctly`** — an *Android* client ID was put in `local.properties` instead of the Web one, or no Android client exists, or the SHA-1 / package does not match the installed APK.
+- **"has not completed the Google verification process"** — `drive.appdata` is a sensitive scope, so while the project is unverified only listed **test users** may sign in. Add the account under OAuth consent screen → Audience → Test users; being the project owner does not exempt you. Publishing status must be *Testing*, not unverified *In production*. The "unverified app" warning screen is expected and permanent — proceed via Advanced.
+
+Changing the Android client or test users needs no rebuild. Changing `GOOGLE_WEB_CLIENT_ID` does, since it is compiled into the APK. Verify it landed:
+
+```bash
+cat app/build/generated/res/resValues/debug/values/gradleResValues.xml
+```
+
+## Known gaps
+
+- **No sync retry.** A failed push is caught in `JournalViewModel.runBackup` and dropped; nothing retries until app restart or `Backup now`. Entries stay safe in Room, but can sit un-uploaded. Proper fix is a `syncStatus` column plus WorkManager.
+- **Backup errors are never logged.** `runBackup` swallows exceptions into UI state only, so sync failures cannot be diagnosed from logcat. Log the failure reason — but never journal text.
+- **No tests.** There are no `test`/`androidTest` source sets at all.
 
 ## Permissions
 

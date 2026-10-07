@@ -2,6 +2,7 @@ package com.onelinejournal.data
 
 import androidx.room.Dao
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
@@ -21,4 +22,13 @@ interface JournalEntryDao {
 
     @Upsert
     suspend fun upsertEntries(entries: List<JournalEntry>)
+
+    @Query("DELETE FROM journal_entries")
+    suspend fun deleteAllEntries()
+
+    @Transaction
+    suspend fun replaceAllEntries(entries: List<JournalEntry>) {
+        deleteAllEntries()
+        upsertEntries(entries)
+    }
 }

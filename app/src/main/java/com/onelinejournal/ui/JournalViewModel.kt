@@ -29,6 +29,7 @@ private const val JOURNAL_FONT_KEY = "journal_font"
 private const val JOURNAL_TEXT_SIZE_KEY = "journal_text_size"
 private const val REMINDER_TIME_KEY = "reminder_time"
 private const val LAST_BACKUP_KEY = "google_backup_last_sync"
+private const val OWNER_EMAIL_KEY = "journal_owner_email"
 private const val PUSH_DEBOUNCE_MS = 1_500L
 
 enum class JournalFont(val label: String) {
@@ -238,11 +239,25 @@ class JournalViewModel(
     fun onGoogleSignedIn(email: String) {
         signedInEmail.value = email
         backupError.value = null
-        syncFromCloud()
+
+        val previousOwner = preferences.getString(OWNER_EMAIL_KEY, null)
+        val switchedAccount = previousOwner != null && previousOwner != email
+        preferences.edit().putString(OWNER_EMAIL_KEY, email).apply()
+
+        viewModelScope.launch {
+            runBackup {
+                if (switchedAccount) {
+                    backupRepository.pullReplace(allowUi = false)
+                } else {
+                    backupRepository.pullMergePush(allowUi = false)
+                }
+            }
+        }
     }
 
     fun onGoogleSignedOut() {
         pushJob?.cancel()
+        backupRepository.forgetAccount()
         signedInEmail.value = null
         lastBackupAt.value = null
         backupSyncState.value = BackupSyncState.Idle
@@ -258,6 +273,13 @@ class JournalViewModel(
     fun syncOnStart() {
         if (completedStartupSync) return
         completedStartupSync = true
+
+        // Adopt the signed-in account as owner for sessions that predate ownership
+        // tracking, so a later account switch is still detected.
+        val currentEmail = signedInEmail.value
+        if (!currentEmail.isNullOrBlank() && preferences.getString(OWNER_EMAIL_KEY, null) == null) {
+            preferences.edit().putString(OWNER_EMAIL_KEY, currentEmail).apply()
+        }
         syncFromCloud()
     }
 
@@ -281,7 +303,7 @@ class JournalViewModel(
         pushJob?.cancel()
         pushJob = viewModelScope.launch {
             delay(PUSH_DEBOUNCE_MS)
-            runBackup { backupRepository.push() }
+            runBackup { backupRepository.pullMergePush(allowUi = false) }
         }
     }
 

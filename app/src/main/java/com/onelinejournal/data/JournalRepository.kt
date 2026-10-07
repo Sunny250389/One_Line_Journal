@@ -18,6 +18,10 @@ class JournalRepository(
         journalEntryDao.upsertEntries(entries)
     }
 
+    suspend fun replaceAllEntries(entries: List<JournalEntry>) {
+        journalEntryDao.replaceAllEntries(entries)
+    }
+
     suspend fun updateFavorite(date: String, isFavorite: Boolean) {
         journalEntryDao.updateFavorite(date, isFavorite)
     }

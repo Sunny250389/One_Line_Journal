@@ -17,6 +17,12 @@ class DriveAppDataClient(
     @Volatile
     private var cachedFileId: String? = null
 
+    // The backup file id is scoped to the signed-in account; reusing it across
+    // accounts resolves to a file the new token cannot read.
+    fun reset() {
+        cachedFileId = null
+    }
+
     suspend fun downloadBackup(accessToken: String): String? = withContext(Dispatchers.IO) {
         val fileId = findBackupFileId(accessToken) ?: return@withContext null
         val request = Request.Builder()
