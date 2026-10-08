@@ -121,6 +121,7 @@ class JournalViewModel(
     private val lastBackupAt = MutableStateFlow(
         preferences.getLong(LAST_BACKUP_KEY, 0L).takeIf { it > 0L }
     )
+    private val historyFocus = MutableStateFlow<String?>(null)
     private val backupSyncState = MutableStateFlow(BackupSyncState.Idle)
     private val backupError = MutableStateFlow<String?>(null)
     private var pushJob: Job? = null
@@ -189,6 +190,17 @@ class JournalViewModel(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = JournalUiState()
     )
+
+    /** Date (yyyy-MM-dd) History should scroll to and highlight, or null. */
+    val historyFocusDate: StateFlow<String?> = historyFocus
+
+    fun focusHistoryEntry(date: String) {
+        historyFocus.value = date
+    }
+
+    fun consumeHistoryFocus() {
+        historyFocus.value = null
+    }
 
     fun onInputChanged(value: String) {
         draft.value = value.take(MAX_ENTRY_LENGTH)

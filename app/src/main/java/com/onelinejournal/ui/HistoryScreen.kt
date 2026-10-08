@@ -1,6 +1,12 @@
 package com.onelinejournal.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.delay
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -61,6 +67,7 @@ fun HistoryScreen(
     bottomBar: @Composable () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val focusDate by viewModel.historyFocusDate.collectAsState()
     val context = LocalContext.current
 
     Scaffold(
@@ -101,6 +108,8 @@ fun HistoryScreen(
                 journalTextSize = state.journalTextSize,
                 emptyMessage = "No entries yet. Your journal will appear here after your first line.",
                 emptyIcon = R.drawable.ic_calendar,
+                focusDate = focusDate,
+                onFocusConsumed = viewModel::consumeHistoryFocus,
                 onToggleFavorite = viewModel::toggleFavorite,
                 onShareEntry = { shareJournalEntryCard(context, it, state.journalFont) }
             )
@@ -171,7 +180,9 @@ private fun JournalEntryList(
     emptyMessage: String,
     emptyIcon: Int,
     onToggleFavorite: (JournalEntry) -> Unit,
-    onShareEntry: (JournalEntry) -> Unit
+    onShareEntry: (JournalEntry) -> Unit,
+    focusDate: String? = null,
+    onFocusConsumed: () -> Unit = {}
 ) {
     if (entries.isEmpty()) {
         var visible by remember { mutableStateOf(false) }
@@ -206,7 +217,37 @@ private fun JournalEntryList(
         val grouped = entries.groupBy { entry ->
             runCatching { YearMonth.from(LocalDate.parse(entry.date)) }.getOrNull()
         }
+        val listState = rememberLazyListState()
+        val headerClearance = with(LocalDensity.current) { 44.dp.roundToPx() }
+        var highlightedDate by remember { mutableStateOf<String?>(null) }
+
+        // Jump to the day tapped on the Home calendar, then flash its card.
+        LaunchedEffect(focusDate, entries) {
+            val target = focusDate ?: return@LaunchedEffect
+            var index = 0
+            var found = -1
+            grouped.forEach { (_, monthEntries) ->
+                index += 1 // sticky header
+                monthEntries.forEach { entry ->
+                    if (entry.date == target) found = index
+                    index += 1
+                }
+            }
+            if (found >= 0) {
+                listState.animateScrollToItem(found, -headerClearance)
+                highlightedDate = target
+            }
+            onFocusConsumed()
+        }
+        LaunchedEffect(highlightedDate) {
+            if (highlightedDate != null) {
+                delay(1600)
+                highlightedDate = null
+            }
+        }
+
         LazyColumn(
+            state = listState,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             grouped.forEach { (month, monthEntries) ->
@@ -232,6 +273,7 @@ private fun JournalEntryList(
                         journalTextSize = journalTextSize,
                         onToggleFavorite = onToggleFavorite,
                         onShareEntry = onShareEntry,
+                        highlighted = entry.date == highlightedDate,
                         modifier = Modifier.animateItem(
                             fadeInSpec = tween(200),
                             placementSpec = spring(stiffness = Spring.StiffnessMediumLow)
@@ -287,14 +329,23 @@ private fun JournalEntryCard(
     journalTextSize: Int,
     onToggleFavorite: (JournalEntry) -> Unit,
     onShareEntry: (JournalEntry) -> Unit,
+    highlighted: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val baseColor = MaterialTheme.colorScheme.surfaceContainerHighest
+    val cardColor by animateColorAsState(
+        targetValue = if (highlighted) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.20f).compositeOver(baseColor)
+        } else {
+            baseColor
+        },
+        animationSpec = tween(400),
+        label = "entryHighlight"
+    )
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-        )
+        colors = CardDefaults.cardColors(containerColor = cardColor)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),

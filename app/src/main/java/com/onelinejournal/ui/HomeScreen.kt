@@ -1,6 +1,7 @@
 package com.onelinejournal.ui
 
 import android.app.TimePickerDialog
+import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
@@ -16,6 +17,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material.icons.Icons
@@ -94,7 +96,8 @@ import java.util.Locale
 @Composable
 fun HomeScreen(
     viewModel: JournalViewModel,
-    bottomBar: @Composable () -> Unit
+    bottomBar: @Composable () -> Unit,
+    onOpenDayInHistory: (LocalDate) -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val todaysEntry = state.todaysEntry
@@ -164,7 +167,20 @@ fun HomeScreen(
                 }
             )
 
-            JournalCalendar(entries = state.entries)
+            JournalCalendar(
+                entries = state.entries,
+                onDayClick = { date, hasEntry ->
+                    if (hasEntry) {
+                        onOpenDayInHistory(date)
+                    } else {
+                        Toast.makeText(
+                            context,
+                            "No entry for ${date.format(DateTimeFormatter.ofPattern("MMM d", Locale.US))}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            )
         }
     }
 }
@@ -258,10 +274,12 @@ private fun StreakCard(streakCount: Int) {
             contentAlignment = Alignment.Center
         ) {
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 28.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                StreakFlame(streak = streakCount)
                 Column(horizontalAlignment = Alignment.Start) {
                     Text(
                         text = "DAILY STREAK",
@@ -281,6 +299,7 @@ private fun StreakCard(streakCount: Int) {
                         color = Color.White.copy(alpha = 0.82f)
                     )
                 }
+                StreakFlame(streak = streakCount)
             }
         }
     }
@@ -457,7 +476,10 @@ private fun JournalEditorCard(
 }
 
 @Composable
-private fun JournalCalendar(entries: List<JournalEntry>) {
+private fun JournalCalendar(
+    entries: List<JournalEntry>,
+    onDayClick: (LocalDate, Boolean) -> Unit
+) {
     val today = LocalDate.now()
     var month by remember { mutableStateOf(YearMonth.from(today)) }
     val writtenDates = entries.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() }.toSet()
@@ -522,7 +544,7 @@ private fun JournalCalendar(entries: List<JournalEntry>) {
                 },
                 label = "monthTransition"
             ) { m ->
-                CalendarGrid(month = m, today = today, writtenDates = writtenDates)
+                CalendarGrid(month = m, today = today, writtenDates = writtenDates, onDayClick = onDayClick)
             }
         }
     }
@@ -532,7 +554,8 @@ private fun JournalCalendar(entries: List<JournalEntry>) {
 private fun CalendarGrid(
     month: YearMonth,
     today: LocalDate,
-    writtenDates: Set<LocalDate>
+    writtenDates: Set<LocalDate>,
+    onDayClick: (LocalDate, Boolean) -> Unit
 ) {
     val firstDayOffset = month.atDay(1).dayOfWeek.value % 7
     val cells = buildList<LocalDate?> {
@@ -563,7 +586,8 @@ private fun CalendarGrid(
                                 date = date,
                                 isToday = date == today,
                                 hasEntry = writtenDates.contains(date),
-                                isPastOrToday = !date.isAfter(today)
+                                isPastOrToday = !date.isAfter(today),
+                                onClick = { onDayClick(date, writtenDates.contains(date)) }
                             )
                         }
                     }
@@ -578,7 +602,8 @@ private fun CalendarDay(
     date: LocalDate,
     isToday: Boolean,
     hasEntry: Boolean,
-    isPastOrToday: Boolean
+    isPastOrToday: Boolean,
+    onClick: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     val background = when {
@@ -597,6 +622,7 @@ private fun CalendarDay(
         modifier = Modifier
             .size(26.dp)
             .clip(CircleShape)
+            .then(if (isPastOrToday) Modifier.clickable(onClick = onClick) else Modifier)
             .background(animatedBackground)
             .then(
                 if (isToday) {

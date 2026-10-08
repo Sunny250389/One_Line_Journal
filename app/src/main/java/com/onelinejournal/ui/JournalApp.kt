@@ -32,6 +32,15 @@ fun JournalApp(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
+    val openHistory = {
+        navController.navigate(HISTORY_ROUTE) {
+            popUpTo(HOME_ROUTE) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
     val bottomBar: @Composable () -> Unit = {
         NavigationBar {
             AppDestination.values().forEach { destination ->
@@ -71,7 +80,11 @@ fun JournalApp(
         composable(HOME_ROUTE) {
             HomeScreen(
                 viewModel = viewModel,
-                bottomBar = bottomBar
+                bottomBar = bottomBar,
+                onOpenDayInHistory = { date ->
+                    viewModel.focusHistoryEntry(date.toString())
+                    openHistory()
+                }
             )
         }
         composable(HISTORY_ROUTE) {
