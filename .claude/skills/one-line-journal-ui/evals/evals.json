@@ -1,0 +1,23 @@
+{
+  "skill_name": "one-line-journal-ui",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "The streak card on HomeScreen feels static and boring. Make the streak number animate counting up when the screen first loads, and add a special visual treatment when the streak hits 7+ days.",
+      "expected_output": "Modified StreakCard composable in HomeScreen.kt using animateIntAsState for the count-up animation and conditional styling for high streaks.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "prompt": "The character counter in the journal editor shows '45/120' but gives no visual warning as the user approaches the limit. Make it change colour and add a subtle shake animation when they're down to 10 characters left.",
+      "expected_output": "Modified JournalEditorCard in HomeScreen.kt with animateColorAsState for the counter text and a keyframes shake animation near the limit.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "The history screen just dumps all entries in a flat list with raw dates like '2026-10-08'. Group entries by month with sticky section headers, format dates as human-readable (e.g. 'Wed, Oct 8'), and add a smooth staggered animation when entries load.",
+      "expected_output": "Modified HistoryScreen.kt with LazyColumn stickyHeader blocks grouped by YearMonth, human-readable date formatting, and animateItem() on cards.",
+      "files": []
+    }
+  ]
+}

@@ -30,6 +30,8 @@ private const val JOURNAL_TEXT_SIZE_KEY = "journal_text_size"
 private const val REMINDER_TIME_KEY = "reminder_time"
 private const val LAST_BACKUP_KEY = "google_backup_last_sync"
 private const val OWNER_EMAIL_KEY = "journal_owner_email"
+private const val USER_NAME_KEY = "user_name"
+private const val MAX_NAME_LENGTH = 20
 private const val PUSH_DEBOUNCE_MS = 1_500L
 
 enum class JournalFont(val label: String) {
@@ -64,6 +66,7 @@ data class JournalUiState(
     val journalFont: JournalFont = JournalFont.Sans,
     val journalTextSize: Int = 16,
     val reminderTime: String? = null,
+    val userName: String = "",
     val signedInEmail: String? = null,
     val lastBackupAt: Long? = null,
     val backupSyncState: BackupSyncState = BackupSyncState.Idle,
@@ -77,7 +80,8 @@ private data class JournalSettings(
     val accentTheme: AccentTheme,
     val journalFont: JournalFont,
     val journalTextSize: Int,
-    val reminderTime: String?
+    val reminderTime: String?,
+    val userName: String
 )
 
 private data class BackupUi(
@@ -107,6 +111,9 @@ class JournalViewModel(
     private val reminderTime = MutableStateFlow(
         preferences.getString(REMINDER_TIME_KEY, null)
     )
+    private val userName = MutableStateFlow(
+        preferences.getString(USER_NAME_KEY, null).orEmpty()
+    )
     private val signedInEmail = MutableStateFlow(
         preferences.getString(GoogleAccountSession.EMAIL_KEY, null)
     )
@@ -122,13 +129,15 @@ class JournalViewModel(
         accentTheme,
         journalFont,
         journalTextSize,
-        reminderTime
-    ) { theme, font, textSize, reminder ->
+        reminderTime,
+        userName
+    ) { theme, font, textSize, reminder, name ->
         JournalSettings(
             accentTheme = theme,
             journalFont = font,
             journalTextSize = textSize,
-            reminderTime = reminder
+            reminderTime = reminder,
+            userName = name
         )
     }
 
@@ -168,6 +177,7 @@ class JournalViewModel(
             journalFont = settings.journalFont,
             journalTextSize = settings.journalTextSize,
             reminderTime = settings.reminderTime,
+            userName = settings.userName,
             signedInEmail = backup.signedInEmail,
             lastBackupAt = backup.lastBackupAt,
             backupSyncState = backup.backupSyncState,
@@ -229,6 +239,12 @@ class JournalViewModel(
         val safeSize = size.coerceIn(14, 24)
         journalTextSize.value = safeSize
         preferences.edit().putInt(JOURNAL_TEXT_SIZE_KEY, safeSize).apply()
+    }
+
+    fun setUserName(name: String) {
+        val clean = name.trim().take(MAX_NAME_LENGTH)
+        userName.value = clean
+        preferences.edit().putString(USER_NAME_KEY, clean).apply()
     }
 
     fun setReminderTime(time: String) {

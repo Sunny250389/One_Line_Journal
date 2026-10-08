@@ -46,7 +46,8 @@ app/src/main/java/com/onelinejournal/
     ├── HistoryScreen.kt         # All entries by month
     ├── SettingsScreen.kt        # Theme, font, reminder, Google backup controls
     ├── ShareCard.kt             # Shareable image card from an entry
-    ├── ThemeColorMenu.kt        # Accent theme picker dropdown
+    ├── ThemeColorMenu.kt        # Theme swatch row + font card row (JournalFontPicker)
+    ├── StreakFlame.kt           # Animated streak fire on Home
     └── theme/
         ├── AccentTheme.kt       # Enum of color themes (Green, Blue, Purple, etc.)
         ├── Color.kt             # Token definitions
@@ -63,7 +64,11 @@ app/src/main/java/com/onelinejournal/
 - **Streak:** Calculated in ViewModel from the sorted entry list; counts consecutive days ending today or yesterday.
 - **Theming:** `AccentTheme` enum drives Material3 color scheme; persisted in `SharedPreferences`.
 - **Fonts:** `JournalFont` enum (Sans/Serif/Mono/Casual/Condensed); persists across Home, History, Favorites, and the share card image. `toFontFamily()` in `HomeScreen.kt` is `internal` — shared across all screens. Condensed uses `DeviceFontFamilyName("sans-serif-condensed")` — no bundled font files needed.
-- **Theme colors:** 9 options in `AccentTheme` enum. `ThemeColorMenu` uses `FlowRow` so colors wrap on smaller screens.
+- **Theme colors:** 8 options in `AccentTheme` enum (Amber was removed as a theme; `WarningAmber` in `Color.kt` is the non-selectable warning tint used by the streak glow and character counter). `ThemeColorMenu` is a 4-column grid of labelled swatches; `JournalFontPicker` (same file) is a 2-column grid of font preview cards. A persisted `Amber` theme name falls back to Green via `AccentTheme.fromName`.
+- **Login & name:** Settings has a `Login` card (replaces "Google backup"). A name (`user_name` in `SharedPreferences`, max 20 chars) is required for both `Login with name` (local-only guest) and `Login with Google` (backup as before). Name drives the Home greeting (`Good morning, <name>`, by hour) and the editor title (`<name>'s Journal`, fallback `My Journal`). Logging out of a name-only session clears the name; signing out of Google keeps it.
+- **Streak flame:** `StreakFlame.kt` draws a canvas flame that grows, warms and gains side flames as the streak rises (full strength at 30 days). It uses a slow `infiniteTransition` flicker — a deliberate exception to the UI skill's no-looping rule.
+- **Editor box:** `JournalEditorCard` sizes the text field to 3-6 lines from the text size so a full 120-char entry shows without inner scrolling.
+- **Settings order:** Appearance (theme, font, sample, text size), Reminder, then Login last — compact enough to show without scrolling.
 
 ## Secrets & signing
 

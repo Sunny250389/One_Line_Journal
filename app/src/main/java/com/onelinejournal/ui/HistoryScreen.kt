@@ -1,5 +1,25 @@
 package com.onelinejournal.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextAlign
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -80,6 +100,7 @@ fun HistoryScreen(
                 journalFont = state.journalFont,
                 journalTextSize = state.journalTextSize,
                 emptyMessage = "No entries yet. Your journal will appear here after your first line.",
+                emptyIcon = R.drawable.ic_calendar,
                 onToggleFavorite = viewModel::toggleFavorite,
                 onShareEntry = { shareJournalEntryCard(context, it, state.journalFont) }
             )
@@ -133,6 +154,7 @@ fun FavoritesScreen(
                 journalFont = state.journalFont,
                 journalTextSize = state.journalTextSize,
                 emptyMessage = "No favorites yet. Tap a heart in History to save one here.",
+                emptyIcon = R.drawable.ic_favorite_border,
                 onToggleFavorite = viewModel::toggleFavorite,
                 onShareEntry = { shareJournalEntryCard(context, it, state.journalFont) }
             )
@@ -140,39 +162,122 @@ fun FavoritesScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun JournalEntryList(
     entries: List<JournalEntry>,
     journalFont: JournalFont,
     journalTextSize: Int,
     emptyMessage: String,
+    emptyIcon: Int,
     onToggleFavorite: (JournalEntry) -> Unit,
     onShareEntry: (JournalEntry) -> Unit
 ) {
     if (entries.isEmpty()) {
-        Text(
-            text = emptyMessage,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    } else {
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        var visible by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { visible = true }
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(tween(500)),
+            modifier = Modifier.fillMaxWidth()
         ) {
-            items(
-                items = entries,
-                key = { it.date }
-            ) { entry ->
-                JournalEntryCard(
-                    entry = entry,
-                    journalFont = journalFont,
-                    journalTextSize = journalTextSize,
-                    onToggleFavorite = onToggleFavorite,
-                    onShareEntry = onShareEntry
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 48.dp, start = 24.dp, end = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    painter = painterResource(id = emptyIcon),
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                )
+                Text(
+                    text = emptyMessage,
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
+    } else {
+        val grouped = entries.groupBy { entry ->
+            runCatching { YearMonth.from(LocalDate.parse(entry.date)) }.getOrNull()
+        }
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            grouped.forEach { (month, monthEntries) ->
+                stickyHeader(key = "header-${month ?: "unknown"}") {
+                    Text(
+                        text = month?.format(MONTH_HEADER_FORMAT) ?: "Other",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.background)
+                            .padding(vertical = 6.dp),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                items(
+                    items = monthEntries,
+                    key = { it.date }
+                ) { entry ->
+                    JournalEntryCard(
+                        entry = entry,
+                        journalFont = journalFont,
+                        journalTextSize = journalTextSize,
+                        onToggleFavorite = onToggleFavorite,
+                        onShareEntry = onShareEntry,
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = tween(200),
+                            placementSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                        )
+                    )
+                }
+            }
+        }
     }
+}
+
+private val MONTH_HEADER_FORMAT = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.US)
+private val ENTRY_DATE_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US)
+
+private fun formatEntryDate(date: String): String {
+    return runCatching { LocalDate.parse(date).format(ENTRY_DATE_FORMAT) }.getOrDefault(date)
+}
+
+@Composable
+internal fun FavoriteHeart(
+    isFavorite: Boolean,
+    activeTint: Color,
+    inactiveTint: Color,
+    modifier: Modifier = Modifier
+) {
+    val scale = remember { Animatable(1f) }
+    var firstRun by remember { mutableStateOf(true) }
+    LaunchedEffect(isFavorite) {
+        if (firstRun) {
+            firstRun = false
+        } else if (isFavorite) {
+            scale.animateTo(1.3f, tween(90))
+            scale.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+        }
+    }
+    Icon(
+        painter = painterResource(
+            id = if (isFavorite) R.drawable.ic_favorite else R.drawable.ic_favorite_border
+        ),
+        contentDescription = if (isFavorite) "Remove from favorites" else "Add to favorites",
+        modifier = modifier.graphicsLayer {
+            scaleX = scale.value
+            scaleY = scale.value
+        },
+        tint = if (isFavorite) activeTint else inactiveTint
+    )
 }
 
 @Composable
@@ -181,9 +286,11 @@ private fun JournalEntryCard(
     journalFont: JournalFont,
     journalTextSize: Int,
     onToggleFavorite: (JournalEntry) -> Unit,
-    onShareEntry: (JournalEntry) -> Unit
+    onShareEntry: (JournalEntry) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Card(
+        modifier = modifier,
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
@@ -198,7 +305,7 @@ private fun JournalEntryCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = entry.date,
+                    text = formatEntryDate(entry.date),
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
@@ -212,24 +319,10 @@ private fun JournalEntryCard(
                     )
                 }
                 IconButton(onClick = { onToggleFavorite(entry) }) {
-                    Icon(
-                        painter = painterResource(
-                            id = if (entry.isFavorite) {
-                                R.drawable.ic_favorite
-                            } else {
-                                R.drawable.ic_favorite_border
-                            }
-                        ),
-                        contentDescription = if (entry.isFavorite) {
-                            "Remove from favorites"
-                        } else {
-                            "Add to favorites"
-                        },
-                        tint = if (entry.isFavorite) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
+                    FavoriteHeart(
+                        isFavorite = entry.isFavorite,
+                        activeTint = MaterialTheme.colorScheme.primary,
+                        inactiveTint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }

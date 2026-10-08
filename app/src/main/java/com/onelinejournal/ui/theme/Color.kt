@@ -7,3 +7,6 @@ val SoftGreen = Color(0xFFDCE8DC)
 val Ink = Color(0xFF1B1C18)
 val Sand = Color(0xFFF7F4ED)
 val Mist = Color(0xFFE7E2D8)
+
+// Warning tint for UI feedback (streak glow, character counter). Not a user-selectable theme.
+val WarningAmber = Color(0xFFD97706)

@@ -1,6 +1,38 @@
 package com.onelinejournal.ui
 
 import android.app.TimePickerDialog
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import com.onelinejournal.ui.theme.WarningAmber
+import kotlin.math.PI
+import kotlin.math.ceil
+import kotlin.math.sin
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
@@ -54,6 +86,7 @@ import com.onelinejournal.R
 import com.onelinejournal.ReminderScheduler
 import com.onelinejournal.data.JournalEntry
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -110,9 +143,10 @@ fun HomeScreen(
 
             StreakCard(streakCount = state.streakCount)
 
-            TodayDateRow()
+            GreetingRow(userName = state.userName)
 
             JournalEditorCard(
+                userName = state.userName,
                 input = state.input,
                 todaysEntry = todaysEntry,
                 textSize = state.journalTextSize,
@@ -180,7 +214,31 @@ private fun AppHeader(
 
 @Composable
 private fun StreakCard(streakCount: Int) {
+    val animatedStreak by animateIntAsState(
+        targetValue = streakCount,
+        animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing),
+        label = "streak"
+    )
+    val glowing = streakCount >= 7
+    val glowAlpha by animateFloatAsState(
+        targetValue = if (glowing) 0.35f else 0f,
+        animationSpec = tween(600),
+        label = "streakGlow"
+    )
+    val message = when {
+        streakCount <= 0 -> "Start your streak today"
+        streakCount == 1 -> "One day — great start!"
+        streakCount >= 30 -> "🔥 $streakCount days"
+        else -> "Keep it going!"
+    }
+
     Card(
+        modifier = Modifier.shadow(
+            elevation = if (glowing) 12.dp else 0.dp,
+            shape = RoundedCornerShape(10.dp),
+            ambientColor = WarningAmber,
+            spotColor = WarningAmber
+        ),
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
@@ -195,62 +253,71 @@ private fun StreakCard(streakCount: Int) {
                         )
                     )
                 )
+                .background(WarningAmber.copy(alpha = glowAlpha))
                 .padding(vertical = 12.dp),
             contentAlignment = Alignment.Center
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "DAILY STREAK",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.82f),
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "$streakCount Day${if (streakCount == 1) "" else "s"}",
-                    style = MaterialTheme.typography.displaySmall,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Keep it going!",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.82f)
-                )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                StreakFlame(streak = streakCount)
+                Column(horizontalAlignment = Alignment.Start) {
+                    Text(
+                        text = "DAILY STREAK",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.82f),
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "$animatedStreak Day${if (streakCount == 1) "" else "s"}",
+                        style = MaterialTheme.typography.displaySmall,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.82f)
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun TodayDateRow() {
-    val today = LocalDate.now()
+private fun GreetingRow(userName: String) {
+    val now = LocalDateTime.now()
     val formatter = DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy", Locale.US)
+    val greeting = when (now.hour) {
+        in 5..11 -> "Good morning"
+        in 12..16 -> "Good afternoon"
+        in 17..20 -> "Good evening"
+        else -> "Good night"
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Today's Date",
+                text = if (userName.isBlank()) greeting else "$greeting, $userName",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = formatter.format(today).uppercase(Locale.US),
+                text = formatter.format(now).uppercase(Locale.US),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Icon(
-            painter = painterResource(id = R.drawable.ic_calendar),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
 @Composable
 private fun JournalEditorCard(
+    userName: String,
     input: String,
     todaysEntry: JournalEntry?,
     textSize: Int,
@@ -261,9 +328,53 @@ private fun JournalEditorCard(
     onSave: () -> Unit,
     onToggleFavorite: () -> Unit
 ) {
+    // Grow the box with the text size so a full 120-character line shows without inner scrolling.
+    val visibleLines = ceil(120f * textSize * 0.55f / 300f).toInt().coerceIn(3, 6)
+    val haptic = LocalHapticFeedback.current
+    var justSaved by remember { mutableStateOf(false) }
+    LaunchedEffect(justSaved) {
+        if (justSaved) {
+            delay(700)
+            justSaved = false
+        }
+    }
+    val cardColor by animateColorAsState(
+        targetValue = if (justSaved) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                .compositeOver(MaterialTheme.colorScheme.surface)
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        animationSpec = tween(400),
+        label = "saveTint"
+    )
+    val countColor by animateColorAsState(
+        targetValue = when {
+            charactersRemaining <= 10 -> MaterialTheme.colorScheme.error
+            charactersRemaining <= 30 -> WarningAmber
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        label = "charCountColor"
+    )
+    val shake = remember { Animatable(0f) }
+    val nearLimit = charactersRemaining <= 10
+    val atLimit = charactersRemaining <= 0
+    LaunchedEffect(nearLimit, atLimit) {
+        if (nearLimit) {
+            shake.snapTo(0f)
+            shake.animateTo(1f, tween(300, easing = LinearEasing))
+        }
+    }
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        label = "savePress"
+    )
+
     Card(
         shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = cardColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(
@@ -273,7 +384,7 @@ private fun JournalEditorCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "One-Line Journal",
+                        text = if (userName.isBlank()) "My Journal" else "$userName's Journal",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -287,16 +398,10 @@ private fun JournalEditorCard(
                     onClick = onToggleFavorite,
                     enabled = todaysEntry != null
                 ) {
-                    Icon(
-                        painter = painterResource(
-                            id = if (todaysEntry?.isFavorite == true) {
-                                R.drawable.ic_favorite
-                            } else {
-                                R.drawable.ic_favorite_border
-                            }
-                        ),
-                        contentDescription = "Mark as favorite",
-                        tint = MaterialTheme.colorScheme.primary
+                    FavoriteHeart(
+                        isFavorite = todaysEntry?.isFavorite == true,
+                        activeTint = MaterialTheme.colorScheme.primary,
+                        inactiveTint = MaterialTheme.colorScheme.primary
                     )
                 }
             }
@@ -304,8 +409,8 @@ private fun JournalEditorCard(
                 value = input,
                 onValueChange = onInputChanged,
                 modifier = Modifier.fillMaxWidth(),
-                minLines = 3,
-                maxLines = 3,
+                minLines = visibleLines,
+                maxLines = visibleLines,
                 shape = RoundedCornerShape(8.dp),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                     fontSize = textSize.sp,
@@ -320,16 +425,32 @@ private fun JournalEditorCard(
                     Text("Write one sentence about today")
                 },
                 supportingText = {
-                    Text("${120 - charactersRemaining}/120")
+                    Text(
+                        text = "${120 - charactersRemaining}/120",
+                        color = countColor,
+                        modifier = Modifier.graphicsLayer {
+                            translationX = sin(shake.value * PI.toFloat() * 4f) *
+                                6.dp.toPx() * (1f - shake.value)
+                        }
+                    )
                 }
             )
             Button(
-                onClick = onSave,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    justSaved = true
+                    onSave()
+                },
                 enabled = canSave,
-                modifier = Modifier.fillMaxWidth(),
+                interactionSource = interactionSource,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .scale(pressScale),
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Text(if (todaysEntry == null) "SAVE ENTRY" else "UPDATE ENTRY")
+                Crossfade(targetState = todaysEntry == null, label = "saveLabel") { isNew ->
+                    Text(if (isNew) "SAVE ENTRY" else "UPDATE ENTRY")
+                }
             }
         }
     }
@@ -340,18 +461,7 @@ private fun JournalCalendar(entries: List<JournalEntry>) {
     val today = LocalDate.now()
     var month by remember { mutableStateOf(YearMonth.from(today)) }
     val writtenDates = entries.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() }.toSet()
-    val firstDayOffset = month.atDay(1).dayOfWeek.value % 7
-    val monthName = month.atDay(1).format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.US))
     val weekDays = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-    val cells = buildList<LocalDate?> {
-        repeat(firstDayOffset) { add(null) }
-        for (day in 1..month.lengthOfMonth()) {
-            add(month.atDay(day))
-        }
-        while (size % 7 != 0) {
-            add(null)
-        }
-    }
 
     Card(
         shape = RoundedCornerShape(10.dp),
@@ -367,24 +477,29 @@ private fun JournalCalendar(entries: List<JournalEntry>) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = { month = month.minusMonths(1) }) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                        contentDescription = "Previous month"
+                    )
+                }
+                AnimatedContent(
+                    targetState = month,
+                    modifier = Modifier.weight(1f),
+                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                    label = "monthTitle"
+                ) { m ->
                     Text(
-                        text = "<",
-                        style = MaterialTheme.typography.titleLarge,
+                        text = m.atDay(1).format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.US)),
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                 }
-                Text(
-                    text = monthName,
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
                 IconButton(onClick = { month = month.plusMonths(1) }) {
-                    Text(
-                        text = ">",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = "Next month"
                     )
                 }
             }
@@ -398,46 +513,106 @@ private fun JournalCalendar(entries: List<JournalEntry>) {
                     )
                 }
             }
-            cells.chunked(7).forEach { week ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    week.forEach { date ->
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(26.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (date != null) {
-                                val isPastOrToday = !date.isAfter(today)
-                                val hasEntry = writtenDates.contains(date)
-                                val color = when {
-                                    hasEntry -> Color(0xFF2E7D32)
-                                    isPastOrToday -> Color(0xFFC62828)
-                                    else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.22f)
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .size(26.dp)
-                                        .clip(CircleShape)
-                                        .background(color),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = date.dayOfMonth.toString(),
-                                        color = Color.White,
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
+            AnimatedContent(
+                targetState = month,
+                transitionSpec = {
+                    val dir = if (targetState > initialState) 1 else -1
+                    (slideInHorizontally { dir * it } + fadeIn()) togetherWith
+                        (slideOutHorizontally { -dir * it } + fadeOut())
+                },
+                label = "monthTransition"
+            ) { m ->
+                CalendarGrid(month = m, today = today, writtenDates = writtenDates)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarGrid(
+    month: YearMonth,
+    today: LocalDate,
+    writtenDates: Set<LocalDate>
+) {
+    val firstDayOffset = month.atDay(1).dayOfWeek.value % 7
+    val cells = buildList<LocalDate?> {
+        repeat(firstDayOffset) { add(null) }
+        for (day in 1..month.lengthOfMonth()) {
+            add(month.atDay(day))
+        }
+        while (size % 7 != 0) {
+            add(null)
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        cells.chunked(7).forEach { week ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                week.forEach { date ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(26.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (date != null) {
+                            CalendarDay(
+                                date = date,
+                                isToday = date == today,
+                                hasEntry = writtenDates.contains(date),
+                                isPastOrToday = !date.isAfter(today)
+                            )
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CalendarDay(
+    date: LocalDate,
+    isToday: Boolean,
+    hasEntry: Boolean,
+    isPastOrToday: Boolean
+) {
+    val colors = MaterialTheme.colorScheme
+    val background = when {
+        hasEntry -> colors.primary
+        isPastOrToday -> colors.errorContainer
+        else -> colors.onSurfaceVariant.copy(alpha = 0.12f)
+    }
+    val textColor = when {
+        hasEntry -> colors.onPrimary
+        isPastOrToday -> colors.onErrorContainer
+        else -> colors.onSurfaceVariant
+    }
+    val animatedBackground by animateColorAsState(background, label = "dayBackground")
+
+    Box(
+        modifier = Modifier
+            .size(26.dp)
+            .clip(CircleShape)
+            .background(animatedBackground)
+            .then(
+                if (isToday) {
+                    Modifier.border(2.dp, colors.onSurface.copy(alpha = 0.7f), CircleShape)
+                } else {
+                    Modifier
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = date.dayOfMonth.toString(),
+            color = textColor,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
