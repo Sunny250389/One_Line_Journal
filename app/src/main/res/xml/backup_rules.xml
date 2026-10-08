@@ -3,4 +3,7 @@
     <include
         domain="database"
         path="." />
+    <include
+        domain="sharedpref"
+        path="journal_owner.xml" />
 </full-backup-content>

@@ -4,10 +4,16 @@
         <include
             domain="database"
             path="." />
+        <include
+            domain="sharedpref"
+            path="journal_owner.xml" />
     </cloud-backup>
     <device-transfer>
         <include
             domain="database"
             path="." />
+        <include
+            domain="sharedpref"
+            path="journal_owner.xml" />
     </device-transfer>
 </data-extraction-rules>

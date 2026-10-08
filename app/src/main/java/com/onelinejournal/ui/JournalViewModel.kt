@@ -94,6 +94,7 @@ private data class BackupUi(
 class JournalViewModel(
     private val repository: JournalRepository,
     private val preferences: SharedPreferences,
+    private val ownerPreferences: SharedPreferences,
     private val backupRepository: JournalBackupRepository
 ) : ViewModel() {
 
@@ -256,9 +257,9 @@ class JournalViewModel(
         signedInEmail.value = email
         backupError.value = null
 
-        val previousOwner = preferences.getString(OWNER_EMAIL_KEY, null)
+        val previousOwner = currentOwnerEmail()
         val switchedAccount = previousOwner != null && previousOwner != email
-        preferences.edit().putString(OWNER_EMAIL_KEY, email).apply()
+        ownerPreferences.edit().putString(OWNER_EMAIL_KEY, email).apply()
 
         viewModelScope.launch {
             runBackup {
@@ -269,6 +270,16 @@ class JournalViewModel(
                 }
             }
         }
+    }
+
+    // The owner marker lives in its own prefs file so Android backup restores it together
+    // with the database; otherwise a restored journal could be merged into another account.
+    private fun currentOwnerEmail(): String? {
+        ownerPreferences.getString(OWNER_EMAIL_KEY, null)?.let { return it }
+        val legacy = preferences.getString(OWNER_EMAIL_KEY, null) ?: return null
+        ownerPreferences.edit().putString(OWNER_EMAIL_KEY, legacy).apply()
+        preferences.edit().remove(OWNER_EMAIL_KEY).apply()
+        return legacy
     }
 
     fun onGoogleSignedOut() {
@@ -293,8 +304,8 @@ class JournalViewModel(
         // Adopt the signed-in account as owner for sessions that predate ownership
         // tracking, so a later account switch is still detected.
         val currentEmail = signedInEmail.value
-        if (!currentEmail.isNullOrBlank() && preferences.getString(OWNER_EMAIL_KEY, null) == null) {
-            preferences.edit().putString(OWNER_EMAIL_KEY, currentEmail).apply()
+        if (!currentEmail.isNullOrBlank() && currentOwnerEmail() == null) {
+            ownerPreferences.edit().putString(OWNER_EMAIL_KEY, currentEmail).apply()
         }
         syncFromCloud()
     }
@@ -376,12 +387,13 @@ private fun formatDate(calendar: Calendar): String {
 class JournalViewModelFactory(
     private val repository: JournalRepository,
     private val preferences: SharedPreferences,
+    private val ownerPreferences: SharedPreferences,
     private val backupRepository: JournalBackupRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(JournalViewModel::class.java)) {
-            return JournalViewModel(repository, preferences, backupRepository) as T
+            return JournalViewModel(repository, preferences, ownerPreferences, backupRepository) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

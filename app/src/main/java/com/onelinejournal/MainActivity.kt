@@ -22,6 +22,8 @@ import com.onelinejournal.ui.JournalViewModel
 import com.onelinejournal.ui.JournalViewModelFactory
 import com.onelinejournal.ui.theme.OneLineJournalTheme
 import kotlin.coroutines.cancellation.CancellationException
+import com.onelinejournal.ui.purgeSharedCards
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -32,13 +34,15 @@ class MainActivity : ComponentActivity() {
         val database = JournalDatabase.getInstance(applicationContext)
         val repository = JournalRepository(database.journalEntryDao())
         val preferences = getSharedPreferences("journal_settings", MODE_PRIVATE)
+        val ownerPreferences = getSharedPreferences("journal_owner", MODE_PRIVATE)
         val googleSession = GoogleAccountSession(this, preferences)
         val backupRepository = JournalBackupRepository(
             journalRepository = repository,
             driveClient = DriveAppDataClient(),
             accessToken = { allowUi -> googleSession.getAccessToken(allowUi) }
         )
-        val viewModelFactory = JournalViewModelFactory(repository, preferences, backupRepository)
+        val viewModelFactory = JournalViewModelFactory(repository, preferences, ownerPreferences, backupRepository)
+        lifecycleScope.launch(Dispatchers.IO) { purgeSharedCards(applicationContext) }
         createReminderChannel(this)
         preferences.getString("reminder_time", null)?.let {
             ReminderScheduler.scheduleDaily(this, it)

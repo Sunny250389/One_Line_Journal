@@ -20,6 +20,7 @@ import java.util.Locale
 private const val CARD_WIDTH = 1080
 private const val CARD_HEIGHT = 1350
 private const val CARD_PADDING = 104f
+private const val SHARED_CARDS_DIR = "shared_cards"
 private const val BRANDING = "\u2014 One Line Journal"
 
 fun shareJournalEntryCard(context: Context, entry: JournalEntry, journalFont: JournalFont = JournalFont.Sans) {
@@ -37,9 +38,15 @@ fun shareJournalEntryCard(context: Context, entry: JournalEntry, journalFont: Jo
     )
 }
 
+/** Deletes previously shared card images so entry text isn't left behind in the cache. */
+fun purgeSharedCards(context: Context) {
+    File(context.cacheDir, SHARED_CARDS_DIR).listFiles()?.forEach { it.delete() }
+}
+
 private fun createJournalEntryCardUri(context: Context, entry: JournalEntry, journalFont: JournalFont): Uri {
     val bitmap = createJournalEntryCard(entry, journalFont)
-    val shareDir = File(context.cacheDir, "shared_cards").apply {
+    purgeSharedCards(context)
+    val shareDir = File(context.cacheDir, SHARED_CARDS_DIR).apply {
         mkdirs()
     }
     val shareFile = File(shareDir, "journal-${entry.date}.png")

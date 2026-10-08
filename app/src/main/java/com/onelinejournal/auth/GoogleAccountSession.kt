@@ -1,5 +1,6 @@
 package com.onelinejournal.auth
 
+import android.accounts.Account
 import android.app.Activity
 import android.content.SharedPreferences
 import androidx.activity.ComponentActivity
@@ -98,7 +99,7 @@ class GoogleAccountSession(
             throw IllegalStateException("Google Sign-In did not return an account.")
         }
 
-        val token = authorizeDrive(allowUi = true).accessToken
+        val token = authorizeDrive(allowUi = true, email = email).accessToken
             ?: throw IllegalStateException("Google did not return a Drive access token.")
         cacheToken(token)
         preferences.edit().putString(EMAIL_KEY, email).apply()
@@ -114,7 +115,7 @@ class GoogleAccountSession(
             return cached
         }
 
-        val token = authorizeDrive(allowUi).accessToken
+        val token = authorizeDrive(allowUi, signedInEmail).accessToken
             ?: throw IllegalStateException("Google did not return a Drive access token.")
         cacheToken(token)
         return token
@@ -134,9 +135,14 @@ class GoogleAccountSession(
         cachedAccessTokenAt = System.currentTimeMillis()
     }
 
-    private suspend fun authorizeDrive(allowUi: Boolean): AuthorizationResult {
+    // Pin the request to the account the user picked. Without it, a device with several
+    // Google accounts can authorize Drive for a different account than the one shown.
+    private suspend fun authorizeDrive(allowUi: Boolean, email: String?): AuthorizationResult {
         val request = AuthorizationRequest.builder()
             .setRequestedScopes(listOf(Scope(DRIVE_APPDATA_SCOPE)))
+            .apply {
+                if (!email.isNullOrBlank()) setAccount(Account(email, GOOGLE_ACCOUNT_TYPE))
+            }
             .build()
         val result = authorizationClient.authorize(request).await()
         if (!result.hasResolution()) {
@@ -167,6 +173,7 @@ class GoogleAccountSession(
 
     companion object {
         const val EMAIL_KEY = "google_backup_email"
+        private const val GOOGLE_ACCOUNT_TYPE = "com.google"
         private const val DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
         private const val TOKEN_CACHE_MS = 45L * 60L * 1000L
     }
