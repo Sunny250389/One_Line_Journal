@@ -26,6 +26,10 @@ import kotlinx.coroutines.tasks.await
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+/** Drive access can't be obtained without showing UI, so the user must sign in again. */
+class DriveAuthRequiredException :
+    IllegalStateException("Drive access needs to be granted again. Sign in from Settings.")
+
 class GoogleAccountSession(
     private val activity: ComponentActivity,
     private val preferences: SharedPreferences
@@ -149,7 +153,7 @@ class GoogleAccountSession(
             return result
         }
         if (!allowUi) {
-            throw IllegalStateException("Drive access needs to be granted again. Sign in from Settings.")
+            throw DriveAuthRequiredException()
         }
         val pendingIntent = result.pendingIntent
             ?: throw IllegalStateException("Drive authorization is missing a resolution.")
@@ -172,6 +176,18 @@ class GoogleAccountSession(
     }
 
     companion object {
+        /** Gets a Drive token without any UI, for background work. */
+        suspend fun silentAccessToken(context: android.content.Context, email: String): String {
+            val request = AuthorizationRequest.builder()
+                .setRequestedScopes(listOf(Scope(DRIVE_APPDATA_SCOPE)))
+                .setAccount(Account(email, GOOGLE_ACCOUNT_TYPE))
+                .build()
+            val result = Identity.getAuthorizationClient(context).authorize(request).await()
+            if (result.hasResolution()) throw DriveAuthRequiredException()
+            return result.accessToken
+                ?: throw IllegalStateException("Google did not return a Drive access token.")
+        }
+
         const val EMAIL_KEY = "google_backup_email"
         private const val GOOGLE_ACCOUNT_TYPE = "com.google"
         private const val DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"

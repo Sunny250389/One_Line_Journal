@@ -33,7 +33,10 @@ app/src/main/java/com/onelinejournal/
 ├── backup/
 │   ├── DriveAppDataClient.kt    # OkHttp calls to Google Drive appDataFolder
 │   ├── JournalBackupJson.kt     # JSON serialization for backup file
-│   └── JournalBackupRepository.kt # pull-merge-push logic; merges by updatedAt
+│   ├── JournalBackupRepository.kt # pull-merge-push logic; merges by updatedAt
+│   ├── BackupWorker.kt          # WorkManager retry of failed backups
+│   ├── BackupScheduler.kt       # Enqueue/cancel the retry work
+│   └── BackupPrefs.kt           # Shared pref names/keys
 ├── data/
 │   ├── JournalEntry.kt          # Room entity: date (PK), content, updatedAt, isFavorite
 │   ├── JournalEntryDao.kt       # Room DAO
@@ -48,6 +51,7 @@ app/src/main/java/com/onelinejournal/
     ├── ShareCard.kt             # Shareable image card from an entry
     ├── ThemeColorMenu.kt        # Theme swatch row + font card row (JournalFontPicker)
     ├── StreakFlame.kt           # Animated streak fire on Home
+    ├── LockScreen.kt            # Shown instead of the app while locked
     └── theme/
         ├── AccentTheme.kt       # Enum of color themes (Green, Blue, Purple, etc.)
         ├── Color.kt             # Token definitions
@@ -67,6 +71,9 @@ app/src/main/java/com/onelinejournal/
 - **Theme colors:** 8 options in `AccentTheme` enum (Amber was removed as a theme; `WarningAmber` in `Color.kt` is the non-selectable warning tint used by the streak glow and character counter). `ThemeColorMenu` is a 4-column grid of labelled swatches; `JournalFontPicker` (same file) is a 2-column grid of font preview cards. A persisted `Amber` theme name falls back to Green via `AccentTheme.fromName`.
 - **Login & name:** Settings has a `Login` card (replaces "Google backup"). A name (`user_name` in `SharedPreferences`, max 20 chars) is required for both `Login with name` (local-only guest) and `Login with Google` (backup as before). Name drives the Home greeting (`Good morning, <name>`, by hour) and the editor title (`<name>'s Journal`, fallback `My Journal`). Logging out of a name-only session clears the name; signing out of Google keeps it.
 - **Streak flame:** `StreakFlame.kt` draws a canvas flame that grows, warms and gains side flames as the streak rises (full strength at 30 days). It uses a slow `infiniteTransition` flicker — a deliberate exception to the UI skill's no-looping rule.
+- **Backup retry:** a failed sync (other than "sign in again") sets `backup_pending` and queues `BackupWorker` via WorkManager (`BackupScheduler`): needs a network connection, exponential backoff from 30 s. The worker gets a Drive token silently (`GoogleAccountSession.silentAccessToken`), skips if signed out or if the signed-in account isn't the journal owner, then runs `pullMergePush`. It writes `google_backup_last_sync` and clears `backup_pending`; `JournalViewModel` listens for that pref change and flips the UI from Error to Success. Success or sign-out cancels the queued retry. Failures are logged under tag `OneLineJournal` (exception type + message only, never journal text).
+- **App lock:** optional, off by default (`app_lock_enabled` pref, Settings → App lock). Uses `androidx.biometric` with `BIOMETRIC_WEAK or DEVICE_CREDENTIAL` (fingerprint/face or phone PIN/pattern/password), so `MainActivity` extends `FragmentActivity`. The lock covers the app on cold start and after more than 30 s in the background (`LOCK_GRACE_MS`; the grace stops the Google sign-in/share screens from re-locking). While locked, `LockScreen` is shown instead of `JournalApp` so no entries are composed. Turning the lock on or off requires authenticating. If the phone's screen lock is later removed, the app lock switches itself off rather than locking the user out. `FLAG_SECURE` is set while the lock is enabled, so screenshots and the recent-apps preview are blocked (adb `screencap` shows black).
+- **Entries are permanent by design:** there is deliberately no edit/delete for past entries; the Login card tells users "Entries are permanent, so write what you mean." Revisit with a confirmation dialog if users ask. Real deletion would need sync tombstones, since the backup merge is a union.
 - **Calendar → History:** tapping a Home calendar day that has an entry calls `viewModel.focusHistoryEntry(date)` and navigates to History, which scrolls to that card (accounting for the sticky month header) and flashes it; days without an entry show a toast, future days aren't tappable. The request is one-shot state in `historyFocusDate`, cleared by `consumeHistoryFocus()`.
 - **Editor box:** `JournalEditorCard` sizes the text field to 3-6 lines from the text size so a full 120-char entry shows without inner scrolling.
 - **Settings order:** Appearance (theme, font, sample, text size), Reminder, then Login last — compact enough to show without scrolling.
@@ -113,14 +120,15 @@ cat app/build/generated/res/resValues/debug/values/gradleResValues.xml
 
 ## Known gaps
 
-- **No sync retry.** A failed push is caught in `JournalViewModel.runBackup` and dropped; nothing retries until app restart or `Backup now`. Entries stay safe in Room, but can sit un-uploaded. Proper fix is a `syncStatus` column plus WorkManager.
-- **Backup errors are never logged.** `runBackup` swallows exceptions into UI state only, so sync failures cannot be diagnosed from logcat. Log the failure reason — but never journal text.
+- **Retry is best-effort.** Failed syncs retry in the background, but a sync that needs the user to sign in again can't (the user sees the sign-in message). The in-app debounced push can still be lost if the process is killed before it runs; the next app start's sync covers it.
+- **Backup logging is minimal.** Failures are logged (type + message), not structured; add a diagnostics screen if support needs it.
 - **No tests.** There are no `test`/`androidTest` source sets at all.
 
 ## Permissions
 
 - `INTERNET` — Google Drive backup
 - `POST_NOTIFICATIONS` — daily reminder notifications (Android 13+)
+- (Biometric/device-credential prompts and WorkManager need no extra permissions.)
 
 ## Screens
 
@@ -138,7 +146,9 @@ cat app/build/generated/res/resValues/debug/values/gradleResValues.xml
 | Room 2.6.1 | Local SQLite journal storage |
 | Jetpack Compose BOM 2024.09.03 | UI |
 | Navigation Compose 2.8.2 | Screen routing |
-| Credentials / GoogleId 1.1.1 | Google Sign-In |
+| Credentials 1.5.0 / GoogleId 1.1.1 | Google Sign-In |
+| Biometric 1.1.0 + Fragment 1.8.4 | App lock prompt |
+| WorkManager 2.9.1 | Background backup retry |
 | OkHttp 4.12.0 | Drive API calls |
 | Coroutines (Play Services) 1.9.0 | `await()` on Tasks |
 

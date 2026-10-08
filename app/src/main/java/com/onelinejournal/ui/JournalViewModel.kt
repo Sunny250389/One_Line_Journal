@@ -1,10 +1,13 @@
 package com.onelinejournal.ui
 
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.onelinejournal.auth.DriveAuthRequiredException
 import com.onelinejournal.auth.GoogleAccountSession
+import com.onelinejournal.backup.BackupPrefs
 import com.onelinejournal.backup.JournalBackupRepository
 import com.onelinejournal.data.JournalEntry
 import com.onelinejournal.data.JournalRepository
@@ -28,8 +31,11 @@ private const val THEME_KEY = "accent_theme"
 private const val JOURNAL_FONT_KEY = "journal_font"
 private const val JOURNAL_TEXT_SIZE_KEY = "journal_text_size"
 private const val REMINDER_TIME_KEY = "reminder_time"
-private const val LAST_BACKUP_KEY = "google_backup_last_sync"
-private const val OWNER_EMAIL_KEY = "journal_owner_email"
+private const val LAST_BACKUP_KEY = BackupPrefs.LAST_BACKUP_KEY
+private const val PENDING_BACKUP_KEY = BackupPrefs.PENDING_KEY
+private const val OWNER_EMAIL_KEY = BackupPrefs.OWNER_EMAIL_KEY
+private const val APP_LOCK_KEY = "app_lock_enabled"
+private const val LOG_TAG = "OneLineJournal"
 private const val USER_NAME_KEY = "user_name"
 private const val MAX_NAME_LENGTH = 20
 private const val PUSH_DEBOUNCE_MS = 1_500L
@@ -67,6 +73,7 @@ data class JournalUiState(
     val journalTextSize: Int = 16,
     val reminderTime: String? = null,
     val userName: String = "",
+    val appLockEnabled: Boolean = false,
     val signedInEmail: String? = null,
     val lastBackupAt: Long? = null,
     val backupSyncState: BackupSyncState = BackupSyncState.Idle,
@@ -81,7 +88,8 @@ private data class JournalSettings(
     val journalFont: JournalFont,
     val journalTextSize: Int,
     val reminderTime: String?,
-    val userName: String
+    val userName: String,
+    val appLockEnabled: Boolean
 )
 
 private data class BackupUi(
@@ -95,7 +103,9 @@ class JournalViewModel(
     private val repository: JournalRepository,
     private val preferences: SharedPreferences,
     private val ownerPreferences: SharedPreferences,
-    private val backupRepository: JournalBackupRepository
+    private val backupRepository: JournalBackupRepository,
+    private val scheduleBackupRetry: () -> Unit = {},
+    private val cancelBackupRetry: () -> Unit = {}
 ) : ViewModel() {
 
     private val draft = MutableStateFlow<String?>(null)
@@ -112,6 +122,8 @@ class JournalViewModel(
     private val reminderTime = MutableStateFlow(
         preferences.getString(REMINDER_TIME_KEY, null)
     )
+    private val appLockEnabled = MutableStateFlow(preferences.getBoolean(APP_LOCK_KEY, false))
+    private val locked = MutableStateFlow(appLockEnabled.value)
     private val userName = MutableStateFlow(
         preferences.getString(USER_NAME_KEY, null).orEmpty()
     )
@@ -132,14 +144,15 @@ class JournalViewModel(
         journalFont,
         journalTextSize,
         reminderTime,
-        userName
-    ) { theme, font, textSize, reminder, name ->
+        combine(userName, appLockEnabled) { name, lock -> name to lock }
+    ) { theme, font, textSize, reminder, identity ->
         JournalSettings(
             accentTheme = theme,
             journalFont = font,
             journalTextSize = textSize,
             reminderTime = reminder,
-            userName = name
+            userName = identity.first,
+            appLockEnabled = identity.second
         )
     }
 
@@ -180,6 +193,7 @@ class JournalViewModel(
             journalTextSize = settings.journalTextSize,
             reminderTime = settings.reminderTime,
             userName = settings.userName,
+            appLockEnabled = settings.appLockEnabled,
             signedInEmail = backup.signedInEmail,
             lastBackupAt = backup.lastBackupAt,
             backupSyncState = backup.backupSyncState,
@@ -254,6 +268,25 @@ class JournalViewModel(
         preferences.edit().putInt(JOURNAL_TEXT_SIZE_KEY, safeSize).apply()
     }
 
+    /** True while the app lock screen should cover the journal. */
+    val isLocked: StateFlow<Boolean> = locked
+
+    val isAppLockEnabled: Boolean get() = appLockEnabled.value
+
+    fun setAppLockEnabled(enabled: Boolean) {
+        appLockEnabled.value = enabled
+        locked.value = false
+        preferences.edit().putBoolean(APP_LOCK_KEY, enabled).apply()
+    }
+
+    fun lockApp() {
+        if (appLockEnabled.value) locked.value = true
+    }
+
+    fun unlockApp() {
+        locked.value = false
+    }
+
     fun setUserName(name: String) {
         val clean = name.trim().take(MAX_NAME_LENGTH)
         userName.value = clean
@@ -301,7 +334,8 @@ class JournalViewModel(
         lastBackupAt.value = null
         backupSyncState.value = BackupSyncState.Idle
         backupError.value = null
-        preferences.edit().remove(LAST_BACKUP_KEY).apply()
+        cancelBackupRetry()
+        preferences.edit().remove(LAST_BACKUP_KEY).putBoolean(PENDING_BACKUP_KEY, false).apply()
     }
 
     fun reportBackupError(message: String?) {
@@ -353,14 +387,55 @@ class JournalViewModel(
             block()
             val syncedAt = System.currentTimeMillis()
             lastBackupAt.value = syncedAt
-            preferences.edit().putLong(LAST_BACKUP_KEY, syncedAt).apply()
+            preferences.edit()
+                .putLong(LAST_BACKUP_KEY, syncedAt)
+                .putBoolean(PENDING_BACKUP_KEY, false)
+                .apply()
+            cancelBackupRetry()
             backupSyncState.value = BackupSyncState.Success
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
+            // Log the failure kind only; never journal text.
+            Log.w(LOG_TAG, "Backup failed: ${error.javaClass.simpleName} ${error.message}")
+            // Sign-in problems can't be fixed by waiting, so only queue a retry for the rest.
+            val willRetry = error !is DriveAuthRequiredException
+            preferences.edit().putBoolean(PENDING_BACKUP_KEY, true).apply()
+            if (willRetry) scheduleBackupRetry()
             backupSyncState.value = BackupSyncState.Error
-            backupError.value = error.message ?: "Backup failed"
+            val reason = when (error) {
+                is java.net.UnknownHostException,
+                is java.net.ConnectException,
+                is java.net.SocketTimeoutException -> "Can't reach Google Drive."
+                else -> (error.message ?: "Backup failed").trimEnd('.') + "."
+            }
+            backupError.value = reason + if (willRetry) " We'll retry automatically." else ""
         }
+    }
+
+    // The background retry worker writes its result to preferences; mirror it into the UI.
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+        if (key == LAST_BACKUP_KEY) {
+            val last = prefs.getLong(LAST_BACKUP_KEY, 0L).takeIf { it > 0L }
+            if (last != lastBackupAt.value) {
+                lastBackupAt.value = last
+                if (backupSyncState.value == BackupSyncState.Error &&
+                    !prefs.getBoolean(PENDING_BACKUP_KEY, false)
+                ) {
+                    backupSyncState.value = BackupSyncState.Success
+                    backupError.value = null
+                }
+            }
+        }
+    }
+
+    init {
+        preferences.registerOnSharedPreferenceChangeListener(prefsListener)
+    }
+
+    override fun onCleared() {
+        preferences.unregisterOnSharedPreferenceChangeListener(prefsListener)
+        super.onCleared()
     }
 
     private fun calculateStreak(entries: List<JournalEntry>): Int {
@@ -400,12 +475,21 @@ class JournalViewModelFactory(
     private val repository: JournalRepository,
     private val preferences: SharedPreferences,
     private val ownerPreferences: SharedPreferences,
-    private val backupRepository: JournalBackupRepository
+    private val backupRepository: JournalBackupRepository,
+    private val scheduleBackupRetry: () -> Unit,
+    private val cancelBackupRetry: () -> Unit
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(JournalViewModel::class.java)) {
-            return JournalViewModel(repository, preferences, ownerPreferences, backupRepository) as T
+            return JournalViewModel(
+                repository,
+                preferences,
+                ownerPreferences,
+                backupRepository,
+                scheduleBackupRetry,
+                cancelBackupRetry
+            ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

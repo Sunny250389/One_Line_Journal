@@ -32,10 +32,18 @@ adds an automatic Google Drive backup.
 - **Appearance:** 8 accent themes (Green by default), 5 fonts (Sans, Serif, Mono,
   Casual, Condensed) with live previews, a sample line, and a text-size slider.
 - **Reminder:** shows the daily reminder time (set from the bell on Home).
+- **App lock:** require fingerprint, face or phone PIN to open the app (off by default).
 - **Login:** see below.
 
 ### Reminders
 A daily notification at the time you choose. Tapping it opens the app.
+
+### App lock
+Turn it on in Settings to ask for your fingerprint, face or phone PIN when opening
+the app. It locks on a fresh start and after the app has been in the background
+for about 30 seconds. While it is on, screenshots and the recent-apps preview are
+blocked so your entries stay private. If you later remove your phone's screen
+lock, the app lock switches itself off so you are never locked out.
 
 ### Login and backup
 A name is required to log in, and it is used for the greeting and journal title.
@@ -45,7 +53,9 @@ A name is required to log in, and it is used for the greeting and journal title.
 
 With Google, backup is automatic: it runs on sign-in, on app start, and shortly
 after every save or favourite change. Entries are merged by last-updated time, so
-newer edits win. If a sync fails, a **Retry backup** button appears. Signing in as
+newer edits win. If a sync fails, it is retried automatically in the background
+(waiting for a connection, with growing delays), and a **Retry backup** button
+appears for a manual try. Signing in as
 a *different* Google account replaces the local journal with that account's
 backup, so one account's entries are never uploaded to another's Drive.
 
@@ -58,11 +68,17 @@ ads. See [Privacy_Policy.txt](Privacy_Policy.txt).
 
 ## Known limitations
 
-- Entries can't be deleted from inside the app, and the backup merges rather than
-  tracking deletions, so an entry removed locally comes back on the next sync.
-- A failed backup is not retried automatically (use **Retry backup**, or reopen
-  the app).
+- If Google asks you to sign in again, the background retry can't fix that; sign in
+  from Settings.
 - There are no automated tests yet.
+
+## Design decisions
+
+- **Entries are permanent.** There is no editing or deleting of past entries, on
+  purpose: a journal as an honest record, and a reason to write what you mean. The
+  Login card says so. If people ask for it, edit/delete can be added behind a
+  confirmation (it would need the backup to track deletions, because it currently
+  merges).
 
 ## Build and run
 

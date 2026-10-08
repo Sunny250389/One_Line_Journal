@@ -27,6 +27,7 @@ fun JournalApp(
     viewModel: JournalViewModel,
     onGoogleSignIn: () -> Unit,
     onGoogleSignOut: () -> Unit,
+    onToggleAppLock: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val navController = rememberNavController()
@@ -106,6 +107,7 @@ fun JournalApp(
                 viewModel = viewModel,
                 onGoogleSignIn = onGoogleSignIn,
                 onGoogleSignOut = onGoogleSignOut,
+                onToggleAppLock = onToggleAppLock,
                 bottomBar = bottomBar
             )
         }

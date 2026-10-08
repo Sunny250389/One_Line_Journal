@@ -24,6 +24,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -52,6 +53,7 @@ fun SettingsScreen(
     viewModel: JournalViewModel,
     onGoogleSignIn: () -> Unit,
     onGoogleSignOut: () -> Unit,
+    onToggleAppLock: (Boolean) -> Unit,
     bottomBar: @Composable () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -125,6 +127,22 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+
+            SettingsCard(title = "App lock") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Ask for your fingerprint, face or phone PIN when opening the app.",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Switch(
+                        checked = state.appLockEnabled,
+                        onCheckedChange = onToggleAppLock,
+                        modifier = Modifier.padding(start = 12.dp)
+                    )
+                }
             }
 
             LoginCard(
@@ -253,6 +271,11 @@ private fun LoginCard(
                 color = MaterialTheme.colorScheme.error
             )
         }
+        Text(
+            text = "Entries are permanent, so write what you mean.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
