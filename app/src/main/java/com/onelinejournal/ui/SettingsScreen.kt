@@ -167,12 +167,13 @@ private fun GoogleBackupCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Button(
-                onClick = onBackupNow,
-                enabled = !syncing,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Backup now")
+            if (state.backupSyncState == BackupSyncState.Error) {
+                Button(
+                    onClick = onBackupNow,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Retry backup")
+                }
             }
             OutlinedButton(
                 onClick = onGoogleSignOut,

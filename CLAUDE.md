@@ -58,7 +58,7 @@ app/src/main/java/com/onelinejournal/
 
 - **One entry per day:** `JournalEntry.date` (format `yyyy-MM-dd`) is the primary key; saving overwrites the day.
 - **120-character limit:** Enforced in `JournalViewModel` (`MAX_ENTRY_LENGTH = 120`).
-- **Backup strategy:** Pull-merge-push via Google Drive `appDataFolder`. Conflict resolution uses `updatedAt` (latest wins). Backup is automatic — a push fires 1.5 s after any save/toggle (`PUSH_DEBOUNCE_MS`), on app start, and on sign-in. `Backup now` is a manual override, needed today only because failed pushes are not retried (see Known gaps).
+- **Backup strategy:** Pull-merge-push via Google Drive `appDataFolder`. Conflict resolution uses `updatedAt` (latest wins). Backup is automatic — a push fires 1.5 s after any save/toggle (`PUSH_DEBOUNCE_MS`), on app start, and on sign-in. The always-visible `Backup now` button was removed; Settings now shows a `Retry backup` button only after a failed sync (`BackupSyncState.Error`), since failed pushes are not auto-retried (see Known gaps).
 - **Account isolation:** `journal_owner_email` in `SharedPreferences` records which account local entries belong to. Signing in as a *different* account calls `pullReplace` (cloud wins, local discarded) instead of `pullMergePush`, so one account's entries are never uploaded into another's Drive. Guest → first sign-in still merges, which is the intended migration path. `DriveAppDataClient.cachedFileId` must be reset on account change — the file id is per-account and resolves to an unreadable file under a new token.
 - **Streak:** Calculated in ViewModel from the sorted entry list; counts consecutive days ending today or yesterday.
 - **Theming:** `AccentTheme` enum drives Material3 color scheme; persisted in `SharedPreferences`.
