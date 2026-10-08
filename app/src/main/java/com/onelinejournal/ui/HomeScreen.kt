@@ -274,11 +274,12 @@ private fun StreakCard(streakCount: Int) {
             contentAlignment = Alignment.Center
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 28.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(
+                    space = 48.dp,
+                    alignment = Alignment.CenterHorizontally
+                )
             ) {
                 Column(horizontalAlignment = Alignment.Start) {
                     Text(

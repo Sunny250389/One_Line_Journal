@@ -1,11 +1,86 @@
-# One_Line_Journal
-A Journal app for shy people !!
+# One Line Journal
 
-## Google Drive backup
+A calm, minimalist journal for shy people: write **one line a day** (up to 120
+characters) and watch your streak grow. Built with Kotlin, Jetpack Compose and
+Room. Journaling works fully offline and without an account; signing in just
+adds an automatic Google Drive backup.
 
-Journaling works without an account. Optional Google Sign-In stores a JSON
-snapshot of entries in that account’s hidden Drive **App Data** folder. Signing
-in on a new install with the same account restores and merges the journal.
+**Package:** `com.onelinejournal` · **Min SDK:** 24 (Android 7.0) · **Target SDK:** 36
+
+## Features
+
+### Home
+- Time-of-day greeting with your name ("Good morning, Sunny") and today's date.
+- A streak card with an animated flame that grows, warms and gains side flames as
+  your streak lengthens (full strength at 30 days).
+- Your journal card (`<name>'s Journal`) with a live character counter that turns
+  amber, then red and gives a gentle shake as you near the limit. The box grows
+  with your chosen text size so a full entry fits without scrolling.
+- Save/Update with a press animation and haptic feedback, and a favourite heart.
+- A month calendar: written days use your accent colour, missed days are soft red,
+  today is ringed. Tap a day with an entry to jump to it in History; tap an empty
+  past day to see a "No entry" note.
+- A bell button to set a daily reminder.
+
+### History and Favorites
+- Entries grouped by month under sticky headers, newest first, with readable dates
+  ("Wed, Oct 7").
+- Favourite entries (animated heart) and a Favorites tab.
+- Share any entry as an image card, rendered in your chosen font.
+
+### Settings
+- **Appearance:** 8 accent themes (Green by default), 5 fonts (Sans, Serif, Mono,
+  Casual, Condensed) with live previews, a sample line, and a text-size slider.
+- **Reminder:** shows the daily reminder time (set from the bell on Home).
+- **Login:** see below.
+
+### Reminders
+A daily notification at the time you choose. Tapping it opens the app.
+
+### Login and backup
+A name is required to log in, and it is used for the greeting and journal title.
+
+- **Login with name:** a local-only profile. Your journal stays on the device.
+- **Login with Google:** the same, plus automatic backup to your Google Drive.
+
+With Google, backup is automatic: it runs on sign-in, on app start, and shortly
+after every save or favourite change. Entries are merged by last-updated time, so
+newer edits win. If a sync fails, a **Retry backup** button appears. Signing in as
+a *different* Google account replaces the local journal with that account's
+backup, so one account's entries are never uploaded to another's Drive.
+
+## Privacy
+
+Entries live in a local Room database on your device. The only data sent anywhere
+is the backup file in your own hidden Google Drive App Data folder (scope
+`drive.appdata`), and only if you log in with Google. There are no analytics or
+ads. See [Privacy_Policy.txt](Privacy_Policy.txt).
+
+## Known limitations
+
+- Entries can't be deleted from inside the app, and the backup merges rather than
+  tracking deletions, so an entry removed locally comes back on the next sync.
+- A failed backup is not retried automatically (use **Retry backup**, or reopen
+  the app).
+- There are no automated tests yet.
+
+## Build and run
+
+Requires **JDK 17**. It is pinned in `gradle.properties`
+(`org.gradle.java.home`); newer JDKs such as 26 can't build this project. Put
+your Android SDK path in `local.properties` (`sdk.dir=...`).
+
+```powershell
+.\gradlew.bat assembleDebug     # build a debug APK
+.\gradlew.bat installDebug      # install on a connected device or emulator
+```
+
+The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+
+## Google Drive backup setup
+
+Backup needs a one-time OAuth setup. Until it is done, "Login with Google" shows a
+configuration error (login with name works regardless).
 
 Configure OAuth once in [Google Cloud Console](https://console.cloud.google.com/):
 
