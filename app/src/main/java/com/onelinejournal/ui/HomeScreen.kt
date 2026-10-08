@@ -25,7 +25,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -235,12 +234,6 @@ private fun StreakCard(streakCount: Int) {
         animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing),
         label = "streak"
     )
-    val glowing = streakCount >= 7
-    val glowAlpha by animateFloatAsState(
-        targetValue = if (glowing) 0.35f else 0f,
-        animationSpec = tween(600),
-        label = "streakGlow"
-    )
     val message = when {
         streakCount <= 0 -> "Start your streak today"
         streakCount == 1 -> "One day — great start!"
@@ -249,12 +242,6 @@ private fun StreakCard(streakCount: Int) {
     }
 
     Card(
-        modifier = Modifier.shadow(
-            elevation = if (glowing) 12.dp else 0.dp,
-            shape = RoundedCornerShape(10.dp),
-            ambientColor = WarningAmber,
-            spotColor = WarningAmber
-        ),
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
@@ -269,7 +256,6 @@ private fun StreakCard(streakCount: Int) {
                         )
                     )
                 )
-                .background(WarningAmber.copy(alpha = glowAlpha))
                 .padding(vertical = 12.dp),
             contentAlignment = Alignment.Center
         ) {

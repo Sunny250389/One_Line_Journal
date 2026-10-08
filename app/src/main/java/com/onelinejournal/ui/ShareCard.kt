@@ -21,6 +21,7 @@ private const val CARD_WIDTH = 1080
 private const val CARD_HEIGHT = 1350
 private const val CARD_PADDING = 104f
 private const val SHARED_CARDS_DIR = "shared_cards"
+private const val MIN_ENTRY_TEXT_SIZE = 32f
 private const val BRANDING = "\u2014 One Line Journal"
 
 fun shareJournalEntryCard(context: Context, entry: JournalEntry, journalFont: JournalFont = JournalFont.Sans) {
@@ -114,7 +115,14 @@ private fun createJournalEntryCard(entry: JournalEntry, journalFont: JournalFont
     canvas.drawText(formatShareDate(entry.date), CARD_PADDING, y, datePaint)
 
     y += 210f
-    val quoteLines = wrapText("\"${entry.content}\"", entryPaint, CARD_WIDTH - (CARD_PADDING * 2))
+    val maxTextWidth = CARD_WIDTH - (CARD_PADDING * 2)
+    val maxTextHeight = (CARD_HEIGHT - 190f - 130f) - y
+    var quoteLines = wrapText("\"${entry.content}\"", entryPaint, maxTextWidth)
+    // Many short lines (e.g. lots of line breaks) would run off the card: shrink to fit.
+    while (quoteLines.size * (entryPaint.textSize + 18f) > maxTextHeight && entryPaint.textSize > MIN_ENTRY_TEXT_SIZE) {
+        entryPaint.textSize -= 4f
+        quoteLines = wrapText("\"${entry.content}\"", entryPaint, maxTextWidth)
+    }
     quoteLines.forEach { line ->
         canvas.drawText(line, CARD_PADDING, y, entryPaint)
         y += entryPaint.textSize + 18f
@@ -125,24 +133,41 @@ private fun createJournalEntryCard(entry: JournalEntry, journalFont: JournalFont
     return bitmap
 }
 
+/**
+ * Wraps [text] to [maxWidth], keeping the writer's own line breaks (as the journal box shows
+ * them) and splitting any single word that is wider than a line.
+ */
 private fun wrapText(text: String, paint: Paint, maxWidth: Float): List<String> {
     val lines = mutableListOf<String>()
-    var currentLine = ""
 
-    text.split(" ").forEach { word ->
-        val candidate = if (currentLine.isEmpty()) word else "$currentLine $word"
-        if (paint.measureText(candidate) <= maxWidth) {
-            currentLine = candidate
-        } else {
+    text.split("\n").forEach { paragraph ->
+        if (paragraph.isBlank()) {
+            lines += ""
+            return@forEach
+        }
+        var currentLine = ""
+        paragraph.split(" ").filter { it.isNotEmpty() }.forEach { word ->
+            val candidate = if (currentLine.isEmpty()) word else "$currentLine $word"
+            if (paint.measureText(candidate) <= maxWidth) {
+                currentLine = candidate
+                return@forEach
+            }
             if (currentLine.isNotEmpty()) {
                 lines += currentLine
+                currentLine = ""
             }
-            currentLine = word
+            // The word alone may still be too wide: break it across lines.
+            var rest = word
+            while (paint.measureText(rest) > maxWidth) {
+                val fit = paint.breakText(rest, true, maxWidth, null).coerceAtLeast(1)
+                lines += rest.substring(0, fit)
+                rest = rest.substring(fit)
+            }
+            currentLine = rest
         }
-    }
-
-    if (currentLine.isNotEmpty()) {
-        lines += currentLine
+        if (currentLine.isNotEmpty()) {
+            lines += currentLine
+        }
     }
 
     return lines
