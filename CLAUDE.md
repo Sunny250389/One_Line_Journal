@@ -78,6 +78,10 @@ app/src/main/java/com/onelinejournal/
 - **Editor box:** `JournalEditorCard` sizes the text field to 3-6 lines from the text size so a full 120-char entry shows without inner scrolling.
 - **Settings order:** Appearance (theme, font, sample, text size), Reminder, then Login last — compact enough to show without scrolling.
 
+## Privacy policy page
+
+`Privacy_Policy.txt` is the source of truth. The public page for Play Console is `docs/index.html`, served by GitHub Pages from `main` / `/docs` at https://sunny250389.github.io/One_Line_Journal/. After editing the text, regenerate the page with `python scripts/build_policy_page.py` and commit both files.
+
 ## Secrets & signing
 
 Copy `keystore.properties.example` → `keystore.properties` and fill in:
