@@ -14,6 +14,8 @@ import androidx.core.app.NotificationManagerCompat
 
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
+        // Arm tomorrow first, so the daily reminder continues even if this notification is blocked.
+        ReminderScheduler.scheduleNextFromPrefs(context)
         createReminderChannel(context)
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

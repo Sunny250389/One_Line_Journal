@@ -5,6 +5,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.composable
@@ -21,6 +23,9 @@ private const val HOME_ROUTE = "home"
 private const val HISTORY_ROUTE = "history"
 private const val FAVORITES_ROUTE = "favorites"
 private const val SETTINGS_ROUTE = "settings"
+private const val ENTRY_ARG = "date"
+private const val ENTRY_ROUTE_PREFIX = "entry/"
+private const val ENTRY_ROUTE = "$ENTRY_ROUTE_PREFIX{$ENTRY_ARG}"
 
 @Composable
 fun JournalApp(
@@ -92,6 +97,7 @@ fun JournalApp(
             HistoryScreen(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() },
+                onOpenEntry = { date -> navController.navigate("$ENTRY_ROUTE_PREFIX$date") },
                 bottomBar = bottomBar
             )
         }
@@ -99,7 +105,18 @@ fun JournalApp(
             FavoritesScreen(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() },
+                onOpenEntry = { date -> navController.navigate("$ENTRY_ROUTE_PREFIX$date") },
                 bottomBar = bottomBar
+            )
+        }
+        composable(
+            route = ENTRY_ROUTE,
+            arguments = listOf(navArgument(ENTRY_ARG) { type = NavType.StringType })
+        ) { backStackEntry ->
+            EntryDetailScreen(
+                viewModel = viewModel,
+                date = backStackEntry.arguments?.getString(ENTRY_ARG).orEmpty(),
+                onNavigateBack = { navController.popBackStack() }
             )
         }
         composable(SETTINGS_ROUTE) {

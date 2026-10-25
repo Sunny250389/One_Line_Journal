@@ -14,7 +14,13 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,8 +28,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
+import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import androidx.compose.foundation.layout.Arrangement
@@ -64,6 +72,7 @@ import com.onelinejournal.data.JournalEntry
 fun HistoryScreen(
     viewModel: JournalViewModel,
     onNavigateBack: () -> Unit,
+    onOpenEntry: (String) -> Unit,
     bottomBar: @Composable () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -111,7 +120,9 @@ fun HistoryScreen(
                 focusDate = focusDate,
                 onFocusConsumed = viewModel::consumeHistoryFocus,
                 onToggleFavorite = viewModel::toggleFavorite,
-                onShareEntry = { shareJournalEntryCard(context, it, state.journalFont) }
+                onShareEntry = { shareJournalEntryCard(context, it, state.journalFont) },
+                pageView = state.pageView,
+                onOpenEntry = onOpenEntry
             )
         }
     }
@@ -121,6 +132,7 @@ fun HistoryScreen(
 fun FavoritesScreen(
     viewModel: JournalViewModel,
     onNavigateBack: () -> Unit,
+    onOpenEntry: (String) -> Unit,
     bottomBar: @Composable () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -165,7 +177,9 @@ fun FavoritesScreen(
                 emptyMessage = "No favorites yet. Tap a heart in History to save one here.",
                 emptyIcon = R.drawable.ic_favorite_border,
                 onToggleFavorite = viewModel::toggleFavorite,
-                onShareEntry = { shareJournalEntryCard(context, it, state.journalFont) }
+                onShareEntry = { shareJournalEntryCard(context, it, state.journalFont) },
+                pageView = state.pageView,
+                onOpenEntry = onOpenEntry
             )
         }
     }
@@ -182,7 +196,9 @@ private fun JournalEntryList(
     onToggleFavorite: (JournalEntry) -> Unit,
     onShareEntry: (JournalEntry) -> Unit,
     focusDate: String? = null,
-    onFocusConsumed: () -> Unit = {}
+    onFocusConsumed: () -> Unit = {},
+    pageView: Boolean = false,
+    onOpenEntry: (String) -> Unit = {}
 ) {
     if (entries.isEmpty()) {
         var visible by remember { mutableStateOf(false) }
@@ -273,6 +289,8 @@ private fun JournalEntryList(
                         journalTextSize = journalTextSize,
                         onToggleFavorite = onToggleFavorite,
                         onShareEntry = onShareEntry,
+                        pageView = pageView,
+                        onOpen = { onOpenEntry(entry.date) },
                         highlighted = entry.date == highlightedDate,
                         modifier = Modifier.animateItem(
                             fadeInSpec = tween(200),
@@ -287,8 +305,14 @@ private fun JournalEntryList(
 
 private val MONTH_HEADER_FORMAT = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.US)
 private val ENTRY_DATE_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US)
+private val ENTRY_TIME_FORMAT = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
 
-private fun formatEntryDate(date: String): String {
+/** Time an entry was last written, in the device's time zone (e.g. "9:41 PM"). */
+internal fun formatEntryTime(updatedAt: Long): String {
+    return Instant.ofEpochMilli(updatedAt).atZone(ZoneId.systemDefault()).format(ENTRY_TIME_FORMAT)
+}
+
+internal fun formatEntryDate(date: String): String {
     return runCatching { LocalDate.parse(date).format(ENTRY_DATE_FORMAT) }.getOrDefault(date)
 }
 
@@ -329,6 +353,8 @@ private fun JournalEntryCard(
     journalTextSize: Int,
     onToggleFavorite: (JournalEntry) -> Unit,
     onShareEntry: (JournalEntry) -> Unit,
+    pageView: Boolean,
+    onOpen: () -> Unit,
     highlighted: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -342,8 +368,11 @@ private fun JournalEntryCard(
         animationSpec = tween(400),
         label = "entryHighlight"
     )
+    // In page view, tapping a card opens the full entry; long text scrolls inside the card.
     Card(
-        modifier = modifier,
+        modifier = modifier.then(
+            if (pageView) Modifier.clip(RoundedCornerShape(20.dp)).clickable(onClick = onOpen) else Modifier
+        ),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = cardColor)
     ) {
@@ -356,7 +385,7 @@ private fun JournalEntryCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = formatEntryDate(entry.date),
+                    text = "${formatEntryDate(entry.date)} · ${formatEntryTime(entry.updatedAt)}",
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
@@ -377,13 +406,26 @@ private fun JournalEntryCard(
                     )
                 }
             }
-            Text(
-                text = entry.content,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontFamily = journalFont.toFontFamily(),
-                    fontSize = journalTextSize.sp
-                )
+            val contentStyle = MaterialTheme.typography.bodyLarge.copy(
+                fontFamily = journalFont.toFontFamily(),
+                fontSize = journalTextSize.sp
             )
+            if (pageView) {
+                val previewHeight = with(LocalDensity.current) {
+                    (journalTextSize * PREVIEW_LINES * 1.5f).sp.toDp()
+                }
+                Box(
+                    modifier = Modifier
+                        .heightIn(max = previewHeight)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(text = entry.content, style = contentStyle)
+                }
+            } else {
+                Text(text = entry.content, style = contentStyle)
+            }
         }
     }
 }
+
+private const val PREVIEW_LINES = 6

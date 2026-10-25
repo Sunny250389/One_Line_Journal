@@ -38,6 +38,7 @@ private const val APP_LOCK_KEY = "app_lock_enabled"
 private const val LOG_TAG = "OneLineJournal"
 private const val USER_NAME_KEY = "user_name"
 private const val MAX_NAME_LENGTH = 20
+private const val PAGE_VIEW_KEY = "page_view_enabled"
 private const val PUSH_DEBOUNCE_MS = 1_500L
 
 enum class JournalFont(val label: String) {
@@ -74,13 +75,15 @@ data class JournalUiState(
     val reminderTime: String? = null,
     val userName: String = "",
     val appLockEnabled: Boolean = false,
+    val pageView: Boolean = false,
     val signedInEmail: String? = null,
     val lastBackupAt: Long? = null,
     val backupSyncState: BackupSyncState = BackupSyncState.Idle,
     val backupError: String? = null
 ) {
     val charactersRemaining: Int = MAX_ENTRY_LENGTH - input.length
-    val canSave: Boolean = input.isNotBlank() && input.length <= MAX_ENTRY_LENGTH && !isSaving
+    val canSave: Boolean =
+        input.isNotBlank() && (pageView || input.length <= MAX_ENTRY_LENGTH) && !isSaving
 }
 
 private data class JournalSettings(
@@ -89,7 +92,8 @@ private data class JournalSettings(
     val journalTextSize: Int,
     val reminderTime: String?,
     val userName: String,
-    val appLockEnabled: Boolean
+    val appLockEnabled: Boolean,
+    val pageView: Boolean
 )
 
 private data class BackupUi(
@@ -124,6 +128,7 @@ class JournalViewModel(
     )
     private val appLockEnabled = MutableStateFlow(preferences.getBoolean(APP_LOCK_KEY, false))
     private val locked = MutableStateFlow(appLockEnabled.value)
+    private val pageView = MutableStateFlow(preferences.getBoolean(PAGE_VIEW_KEY, false))
     private val userName = MutableStateFlow(
         preferences.getString(USER_NAME_KEY, null).orEmpty()
     )
@@ -144,7 +149,7 @@ class JournalViewModel(
         journalFont,
         journalTextSize,
         reminderTime,
-        combine(userName, appLockEnabled) { name, lock -> name to lock }
+        combine(userName, appLockEnabled, pageView) { name, lock, page -> Triple(name, lock, page) }
     ) { theme, font, textSize, reminder, identity ->
         JournalSettings(
             accentTheme = theme,
@@ -152,7 +157,8 @@ class JournalViewModel(
             journalTextSize = textSize,
             reminderTime = reminder,
             userName = identity.first,
-            appLockEnabled = identity.second
+            appLockEnabled = identity.second,
+            pageView = identity.third
         )
     }
 
@@ -194,6 +200,7 @@ class JournalViewModel(
             reminderTime = settings.reminderTime,
             userName = settings.userName,
             appLockEnabled = settings.appLockEnabled,
+            pageView = settings.pageView,
             signedInEmail = backup.signedInEmail,
             lastBackupAt = backup.lastBackupAt,
             backupSyncState = backup.backupSyncState,
@@ -217,13 +224,15 @@ class JournalViewModel(
     }
 
     fun onInputChanged(value: String) {
-        draft.value = value.take(MAX_ENTRY_LENGTH)
+        // Page view (diary) has no character limit; the classic one-liner keeps its 120.
+        draft.value = if (pageView.value) value else value.take(MAX_ENTRY_LENGTH)
     }
 
     fun saveTodayEntry() {
         val current = uiState.value
         val content = current.input.trim()
-        if (content.isBlank() || content.length > MAX_ENTRY_LENGTH) return
+        val overLimit = !pageView.value && content.length > MAX_ENTRY_LENGTH
+        if (content.isBlank() || overLimit) return
 
         viewModelScope.launch {
             isSaving.value = true
@@ -287,6 +296,11 @@ class JournalViewModel(
         locked.value = false
     }
 
+    fun setPageViewEnabled(enabled: Boolean) {
+        pageView.value = enabled
+        preferences.edit().putBoolean(PAGE_VIEW_KEY, enabled).apply()
+    }
+
     fun setUserName(name: String) {
         val clean = name.trim().take(MAX_NAME_LENGTH)
         userName.value = clean
@@ -296,6 +310,11 @@ class JournalViewModel(
     fun setReminderTime(time: String) {
         reminderTime.value = time
         preferences.edit().putString(REMINDER_TIME_KEY, time).apply()
+    }
+
+    fun clearReminderTime() {
+        reminderTime.value = null
+        preferences.edit().remove(REMINDER_TIME_KEY).apply()
     }
 
     fun onGoogleSignedIn(email: String) {

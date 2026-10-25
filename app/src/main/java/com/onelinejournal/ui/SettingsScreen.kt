@@ -1,5 +1,9 @@
 package com.onelinejournal.ui
 
+import android.app.TimePickerDialog
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -34,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +47,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.onelinejournal.ReminderScheduler
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -57,6 +63,30 @@ fun SettingsScreen(
     bottomBar: @Composable () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val pickReminderTime = {
+        val now = java.util.Calendar.getInstance()
+        TimePickerDialog(
+            context,
+            { _, hour, minute ->
+                val time = "%02d:%02d".format(hour, minute)
+                viewModel.setReminderTime(time)
+                ReminderScheduler.scheduleDaily(context, time)
+                if (!ReminderScheduler.canScheduleExact(context)) {
+                    // Ask the user to allow exact alarms so the reminder arrives on time.
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                    )
+                }
+            },
+            now.get(java.util.Calendar.HOUR_OF_DAY),
+            now.get(java.util.Calendar.MINUTE),
+            false
+        ).show()
+    }
 
     Scaffold(
         bottomBar = bottomBar,
@@ -120,13 +150,44 @@ fun SettingsScreen(
                 }
             }
 
+            SettingsCard(title = "Page view") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Show Home as a diary page with lined paper, no character limit, and the calendar in a pop-up.",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Switch(
+                        checked = state.pageView,
+                        onCheckedChange = viewModel::setPageViewEnabled,
+                        modifier = Modifier.padding(start = 12.dp)
+                    )
+                }
+            }
+
             SettingsCard(title = "Reminder") {
-                Text(
-                    text = state.reminderTime?.let { "Daily reminder at $it" }
-                        ?: "Tap the bell on Home to set a daily reminder.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = state.reminderTime?.let { "Daily at $it" } ?: "No reminder set",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            if (state.reminderTime == null) {
+                                pickReminderTime()
+                            } else {
+                                ReminderScheduler.cancel(context)
+                                viewModel.clearReminderTime()
+                            }
+                        },
+                        modifier = Modifier.padding(start = 12.dp)
+                    ) {
+                        Text(if (state.reminderTime == null) "Set time" else "Turn off")
+                    }
+                }
             }
 
             SettingsCard(title = "App lock") {

@@ -18,7 +18,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 
@@ -32,7 +34,9 @@ private const val FULL_FLAME_STREAK = 30f
 @Composable
 fun StreakFlame(
     streak: Int,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    width: Dp = 68.dp,
+    height: Dp = 76.dp
 ) {
     val level by animateFloatAsState(
         targetValue = (streak / FULL_FLAME_STREAK).coerceIn(0f, 1f),
@@ -60,33 +64,38 @@ fun StreakFlame(
     )
     val ember = streak <= 0
 
-    Canvas(modifier = modifier.size(width = 68.dp, height = 76.dp)) {
-        val centerX = size.width / 2f
-        val bottom = size.height - 4.dp.toPx()
-        val alpha = if (ember) 0.4f else 1f
-
-        // Glow behind the fire gets wider and warmer with the streak.
-        val glowRadius = lerp(22.dp.toPx(), 62.dp.toPx(), level)
-        val glowAlpha = lerp(0.08f, 0.55f, level) * (0.85f + 0.15f * flicker) * alpha
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(Color(0xFFFFB300).copy(alpha = glowAlpha), Color.Transparent),
-                center = Offset(centerX, bottom - size.height * 0.28f),
-                radius = glowRadius
-            ),
-            radius = glowRadius,
-            center = Offset(centerX, bottom - size.height * 0.28f)
-        )
-
-        val mainWidth = lerp(26.dp.toPx(), 44.dp.toPx(), level)
-        val mainHeight = lerp(34.dp.toPx(), 66.dp.toPx(), level)
-
-        if (level > 0.45f) {
-            val sideScale = lerp(0.35f, 0.58f, (level - 0.45f) / 0.55f)
-            drawFlame(centerX - mainWidth * 0.62f, bottom, mainWidth * sideScale, mainHeight * sideScale, level, flicker, -sway, alpha)
-            drawFlame(centerX + mainWidth * 0.62f, bottom, mainWidth * sideScale, mainHeight * sideScale, level, 1f - flicker, sway, alpha)
-        }
-        drawFlame(centerX, bottom, mainWidth, mainHeight, level, flicker, sway, alpha)
+    Canvas(modifier = modifier.size(width = width, height = height)) {
+        // Draw at the full 68x76 dp design size, then scale it to fit the requested box.
+        val designWidth = 68.dp.toPx()
+        val designHeight = 76.dp.toPx()
+        scale(scaleX = size.width / designWidth, scaleY = size.height / designHeight, pivot = Offset.Zero) {
+            val centerX = designWidth / 2f
+            val bottom = designHeight - 4.dp.toPx()
+            val alpha = if (ember) 0.4f else 1f
+    
+            // Glow behind the fire gets wider and warmer with the streak.
+            val glowRadius = lerp(22.dp.toPx(), 62.dp.toPx(), level)
+            val glowAlpha = lerp(0.08f, 0.55f, level) * (0.85f + 0.15f * flicker) * alpha
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0xFFFFB300).copy(alpha = glowAlpha), Color.Transparent),
+                    center = Offset(centerX, bottom - designHeight * 0.28f),
+                    radius = glowRadius
+                ),
+                radius = glowRadius,
+                center = Offset(centerX, bottom - designHeight * 0.28f)
+            )
+    
+            val mainWidth = lerp(26.dp.toPx(), 44.dp.toPx(), level)
+            val mainHeight = lerp(34.dp.toPx(), 66.dp.toPx(), level)
+    
+            if (level > 0.45f) {
+                val sideScale = lerp(0.35f, 0.58f, (level - 0.45f) / 0.55f)
+                drawFlame(centerX - mainWidth * 0.62f, bottom, mainWidth * sideScale, mainHeight * sideScale, level, flicker, -sway, alpha)
+                drawFlame(centerX + mainWidth * 0.62f, bottom, mainWidth * sideScale, mainHeight * sideScale, level, 1f - flicker, sway, alpha)
+            }
+            drawFlame(centerX, bottom, mainWidth, mainHeight, level, flicker, sway, alpha)
+            }
     }
 }
 
