@@ -127,9 +127,7 @@ fun HomeScreen(
                     keyboardController?.hide()
                     viewModel.saveTodayEntry()
                 },
-                onToggleFavorite = {
-                    todaysEntry?.let(viewModel::toggleFavorite)
-                },
+                onToggleFavorite = viewModel::toggleFavorite,
                 onOpenDayInHistory = onOpenDayInHistory,
                 modifier = Modifier
                     .fillMaxSize()
