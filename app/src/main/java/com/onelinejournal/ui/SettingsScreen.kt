@@ -74,6 +74,7 @@ fun SettingsScreen(
                 ReminderScheduler.scheduleDaily(context, time)
                 if (!ReminderScheduler.canScheduleExact(context)) {
                     // Ask the user to allow exact alarms so the reminder arrives on time.
+                    viewModel.expectExternalScreen()
                     context.startActivity(
                         Intent(
                             Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
