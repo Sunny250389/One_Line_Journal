@@ -1,8 +1,16 @@
 package com.onelinejournal.backup
 
 import com.onelinejournal.data.JournalEntry
+import java.io.IOException
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
+
+/**
+ * The Drive backup can't be parsed. The message is fixed because org.json's own messages quote
+ * the input, which would put journal text in logs and on screen.
+ */
+class BackupCorruptException : IOException("The backup in Google Drive can't be read.")
 
 object JournalBackupJson {
     private const val VERSION = 1
@@ -27,8 +35,12 @@ object JournalBackupJson {
 
     fun fromJson(text: String): List<JournalEntry> {
         if (text.isBlank()) return emptyList()
-        val root = JSONObject(text)
-        val array = root.optJSONArray("entries") ?: return emptyList()
+        val root = try {
+            JSONObject(text)
+        } catch (_: JSONException) {
+            throw BackupCorruptException()
+        }
+        val array = root.optJSONArray("entries") ?: throw BackupCorruptException()
         val entries = ArrayList<JournalEntry>(array.length())
         for (index in 0 until array.length()) {
             val item = array.optJSONObject(index) ?: continue

@@ -106,6 +106,11 @@ android {
         compose = true
     }
 
+    testOptions {
+        // Lets code that calls android.util.Log run in plain JVM tests.
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -144,6 +149,10 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+
+    testImplementation("junit:junit:4.13.2")
+    // android.jar only has stubs for org.json, so JVM tests need the real thing.
+    testImplementation("org.json:json:20240303")
 
     debugImplementation(composeBom)
     debugImplementation("androidx.compose.ui:ui-tooling")

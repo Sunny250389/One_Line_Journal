@@ -9,6 +9,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONException
 import org.json.JSONObject
 
 class DriveAppDataClient(
@@ -42,6 +43,19 @@ class DriveAppDataClient(
         }
     }
 
+    /** Renames the current backup so it no longer counts as the backup file. */
+    suspend fun setAsideBackup(accessToken: String) = withContext(Dispatchers.IO) {
+        val fileId = findBackupFileId(accessToken) ?: return@withContext
+        val metadata = JSONObject().put("name", CORRUPT_FILE_NAME).toString()
+        val request = Request.Builder()
+            .url("$DRIVE_FILES/$fileId")
+            .header("Authorization", "Bearer $accessToken")
+            .patch(metadata.toRequestBody(JSON_MEDIA_TYPE.toMediaType()))
+            .build()
+        execute(request)
+        cachedFileId = null
+    }
+
     private fun findBackupFileId(accessToken: String): String? {
         cachedFileId?.let { return it }
         val query = URLEncoder.encode("name='$BACKUP_FILE_NAME'", StandardCharsets.UTF_8.name())
@@ -51,7 +65,7 @@ class DriveAppDataClient(
             .get()
             .build()
         val body = execute(request)
-        val files = JSONObject(body).optJSONArray("files") ?: return null
+        val files = parseDriveResponse(body).optJSONArray("files") ?: return null
         if (files.length() == 0) return null
         val fileId = files.getJSONObject(0).optString("id").takeIf { it.isNotBlank() }
         cachedFileId = fileId
@@ -80,7 +94,7 @@ class DriveAppDataClient(
             .post(multipart.toRequestBody("multipart/related; boundary=$boundary".toMediaType()))
             .build()
         val body = execute(request)
-        cachedFileId = JSONObject(body).optString("id").takeIf { it.isNotBlank() }
+        cachedFileId = parseDriveResponse(body).optString("id").takeIf { it.isNotBlank() }
     }
 
     private fun updateBackup(accessToken: String, fileId: String, json: String) {
@@ -90,6 +104,14 @@ class DriveAppDataClient(
             .patch(json.toRequestBody(JSON_MEDIA_TYPE.toMediaType()))
             .build()
         execute(request)
+    }
+
+    private fun parseDriveResponse(body: String): JSONObject {
+        return try {
+            JSONObject(body)
+        } catch (_: JSONException) {
+            throw IOException("Drive returned an unexpected response")
+        }
     }
 
     private fun execute(request: Request): String {
@@ -104,6 +126,7 @@ class DriveAppDataClient(
 
     companion object {
         const val BACKUP_FILE_NAME = "one_line_journal.json"
+        const val CORRUPT_FILE_NAME = "one_line_journal.corrupt.json"
         private const val JSON_MEDIA_TYPE = "application/json"
         private const val DRIVE_FILES = "https://www.googleapis.com/drive/v3/files"
         private const val DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"

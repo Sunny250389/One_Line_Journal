@@ -1,21 +1,22 @@
 Privacy Policy for One Line Journal
-Effective Date: October 9, 2026
+Effective Date: October 31, 2026
 
 One Line Journal ("the App") is a personal journaling app. Your journal is yours: it is stored on your device, and the developer has no servers that receive it and no way to read it. This policy explains exactly what the App stores, when anything leaves your device, and how you can remove it.
 
 1) Information the App Handles
 On your device:
-- Journal entries: the text you write (up to 120 characters per day), its date, and whether you marked it as a favorite.
+- Journal entries: the text you write (up to 120 characters per day, or longer if you turn on page view), its date, and whether you marked it as a favorite.
+- Unsaved drafts: text you have typed but not saved, kept so it isn't lost if the App closes. Drafts stay on your device and are not included in any backup. A draft is removed when you save it or complete a switch to a different Google account.
 - Your name, if you enter one when you log in. It is used only to personalize the greeting and the journal title.
-- App settings: theme, font, text size, reminder time, and whether the app lock is on.
+- App settings: theme, font, text size, page view, reminder time, and whether the app lock is on.
 - If you log in with Google: the email address of that Google account, so the App knows which account is signed in.
 
 The App does NOT collect: your location, contacts, photos, microphone or camera data, advertising ID, or device identifiers. It has no analytics, no advertising, and no crash-reporting services.
 
 2) Google Login and Backup (optional)
-Logging in with Google is optional. If you do, the App saves a backup copy of your journal entries to the hidden "App Data" folder of YOUR Google Drive account, using the permission "drive.appdata". This permission lets the App read and write only its own backup file; it cannot see your other Drive files. The backup is created automatically after you write, on app start, and on sign-in, and a failed backup is retried in the background when a connection is available.
+Logging in with Google is optional. If you do, the App saves a backup copy of your journal entries to the hidden "App Data" folder of YOUR Google Drive account, using the permission "drive.appdata". This permission lets the App read and write only its own backup files; it cannot see your other Drive files. The backup is created automatically after you write, on app start, and on sign-in, and a failed backup is retried in the background when a connection is available. If the backup file can't be read, the App keeps it in the same hidden folder under another name and saves a new backup from your device.
 
-This backup goes directly between your device and Google. It is not sent to the developer. Google's handling of that data is governed by Google's own privacy policy and your Google account settings. If you sign in on another device with the same account, your journal is restored there. If you sign in with a different Google account, the journal on the device is replaced by that account's own backup, so one account's entries are never uploaded into another account.
+This backup goes directly between your device and Google. It is not sent to the developer. Google's handling of that data is governed by Google's own privacy policy and your Google account settings. If you sign in on another device with the same account, your journal is restored there. If you sign in with a different Google account while the device holds a journal, the App asks you first. If you agree, the journal on the device is replaced by that account's own backup, and anything not already backed up is deleted. If you cancel, that account is signed out and the journal stays. Either way, one account's entries are never uploaded into another account.
 
 If you use "Login with name" instead, nothing is sent anywhere and your journal stays on the device.
 
@@ -34,6 +35,9 @@ If you set a daily reminder, the App schedules a local notification on your devi
 7) Permissions
 - Internet: only used for the optional Google Drive backup.
 - Notifications: only used for your daily reminder.
+- Alarms: only used to deliver your daily reminder on time.
+- Biometrics: only used for the optional app lock.
+- Network state, wake lock, foreground service and start at boot: used by Android's background task system to retry a failed backup when a connection is available.
 
 8) Data Retention and Deletion
 - Entries are permanent inside the App by design: it does not currently offer editing or deleting past entries.
