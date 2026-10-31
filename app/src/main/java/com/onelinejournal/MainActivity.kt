@@ -43,7 +43,6 @@ import kotlinx.coroutines.launch
 class MainActivity : FragmentActivity() {
     private lateinit var viewModel: JournalViewModel
     private var promptShowing = false
-    private var backgroundedAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,6 +82,7 @@ class MainActivity : FragmentActivity() {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
+            viewModel.expectExternalScreen()
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 10)
         }
 
@@ -107,12 +107,15 @@ class MainActivity : FragmentActivity() {
                         viewModel = viewModel,
                         onGoogleSignIn = {
                             lifecycleScope.launch {
+                                viewModel.setSignInActive(true)
                                 try {
                                     val email = googleSession.signIn()
                                     viewModel.onGoogleSignedIn(email)
                                 } catch (_: CancellationException) {
                                 } catch (error: Exception) {
                                     viewModel.reportBackupError(error.message)
+                                } finally {
+                                    viewModel.setSignInActive(false)
                                 }
                             }
                         },
@@ -129,20 +132,23 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    /** Lock after the app has been in the background longer than a short grace period. */
+    /** Lock as soon as the app leaves the screen, except for screens the app itself opened. */
     private fun observeLifecycleForLock() {
         lifecycle.addObserver(
             LifecycleEventObserver { _, event ->
                 when (event) {
                     Lifecycle.Event.ON_STOP -> {
-                        backgroundedAt = SystemClock.elapsedRealtime()
+                        // Rotating the phone stops the activity too, but nobody left the app.
+                        if (!isChangingConfigurations) {
+                            viewModel.onAppBackgrounded(SystemClock.elapsedRealtime(), promptShowing)
+                        }
                         viewModel.flushDraft()
                     }
                     Lifecycle.Event.ON_START -> {
-                        val away = SystemClock.elapsedRealtime() - backgroundedAt
-                        if (backgroundedAt != 0L && away > LOCK_GRACE_MS) viewModel.lockApp()
+                        viewModel.onAppForegrounded(SystemClock.elapsedRealtime(), EXTERNAL_SCREEN_GRACE_MS)
                         if (viewModel.isLocked.value) requestUnlock()
                     }
+                    Lifecycle.Event.ON_RESUME -> viewModel.onAppResumed()
                     else -> Unit
                 }
             }
@@ -215,6 +221,7 @@ class MainActivity : FragmentActivity() {
 
     private companion object {
         const val AUTHENTICATORS = BIOMETRIC_WEAK or DEVICE_CREDENTIAL
-        const val LOCK_GRACE_MS = 30_000L
+        // Sign-in and share keep the app unlocked, but not indefinitely if the user wanders off.
+        const val EXTERNAL_SCREEN_GRACE_MS = 120_000L
     }
 }

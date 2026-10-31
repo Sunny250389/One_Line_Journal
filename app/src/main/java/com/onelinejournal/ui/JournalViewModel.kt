@@ -151,6 +151,13 @@ class JournalViewModel(
     private val pendingSwitchFrom = MutableStateFlow<String?>(null)
     private var pushJob: Job? = null
     private var draftSaveJob: Job? = null
+
+    // Kept here, not in the activity: a dark mode or rotation change while in the background
+    // recreates the activity, and a timestamp stored there would be lost, skipping the lock.
+    private var backgroundedAt = 0L
+    private var leftForExternalScreen = false
+    private var signInActive = false
+    private var externalScreenExpected = false
     private var completedStartupSync = false
 
     private val settingsState = combine(
@@ -353,6 +360,33 @@ class JournalViewModel(
         appLockEnabled.value = enabled
         locked.value = false
         preferences.edit().putBoolean(APP_LOCK_KEY, enabled).apply()
+    }
+
+    /** Sign-in can open several system screens in a row, so it is tracked until it finishes. */
+    fun setSignInActive(active: Boolean) {
+        signInActive = active
+    }
+
+    /** Call just before opening a screen outside the app (share sheet, system settings). */
+    fun expectExternalScreen() {
+        externalScreenExpected = true
+    }
+
+    fun onAppBackgrounded(now: Long, promptShowing: Boolean) {
+        backgroundedAt = now
+        leftForExternalScreen = signInActive || externalScreenExpected || promptShowing
+    }
+
+    /** Leaving the app locks at once; a screen the app itself opened gets [externalGraceMs]. */
+    fun onAppForegrounded(now: Long, externalGraceMs: Long) {
+        val leftAt = backgroundedAt
+        backgroundedAt = 0L
+        if (leftAt == 0L) return
+        if (!leftForExternalScreen || now - leftAt > externalGraceMs) lockApp()
+    }
+
+    fun onAppResumed() {
+        externalScreenExpected = false
     }
 
     fun lockApp() {

@@ -120,7 +120,10 @@ fun HistoryScreen(
                 focusDate = focusDate,
                 onFocusConsumed = viewModel::consumeHistoryFocus,
                 onToggleFavorite = viewModel::toggleFavorite,
-                onShareEntry = { shareJournalEntryCard(context, it, state.journalFont) },
+                onShareEntry = {
+                    viewModel.expectExternalScreen()
+                    shareJournalEntryCard(context, it, state.journalFont)
+                },
                 pageView = state.pageView,
                 onOpenEntry = onOpenEntry
             )
@@ -177,7 +180,10 @@ fun FavoritesScreen(
                 emptyMessage = "No favorites yet. Tap a heart in History to save one here.",
                 emptyIcon = R.drawable.ic_favorite_border,
                 onToggleFavorite = viewModel::toggleFavorite,
-                onShareEntry = { shareJournalEntryCard(context, it, state.journalFont) },
+                onShareEntry = {
+                    viewModel.expectExternalScreen()
+                    shareJournalEntryCard(context, it, state.journalFont)
+                },
                 pageView = state.pageView,
                 onOpenEntry = onOpenEntry
             )

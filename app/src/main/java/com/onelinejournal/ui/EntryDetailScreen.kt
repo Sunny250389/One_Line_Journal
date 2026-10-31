@@ -78,7 +78,10 @@ fun EntryDetailScreen(
                     }
                 }
                 if (entry != null) {
-                    IconButton(onClick = { shareJournalEntryCard(context, entry, state.journalFont) }) {
+                    IconButton(onClick = {
+                        viewModel.expectExternalScreen()
+                        shareJournalEntryCard(context, entry, state.journalFont)
+                    }) {
                         Icon(
                             painter = painterResource(id = R.drawable.ic_share),
                             contentDescription = "Share as card",
