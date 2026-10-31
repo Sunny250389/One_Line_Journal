@@ -64,6 +64,7 @@ class MainActivity : FragmentActivity() {
             preferences = preferences,
             ownerPreferences = ownerPreferences,
             backupRepository = backupRepository,
+            draftPreferences = getSharedPreferences(BackupPrefs.DRAFT_FILE, MODE_PRIVATE),
             scheduleBackupRetry = { BackupScheduler.scheduleRetry(applicationContext) },
             cancelBackupRetry = { BackupScheduler.cancelRetry(applicationContext) }
         )
@@ -133,7 +134,10 @@ class MainActivity : FragmentActivity() {
         lifecycle.addObserver(
             LifecycleEventObserver { _, event ->
                 when (event) {
-                    Lifecycle.Event.ON_STOP -> backgroundedAt = SystemClock.elapsedRealtime()
+                    Lifecycle.Event.ON_STOP -> {
+                        backgroundedAt = SystemClock.elapsedRealtime()
+                        viewModel.flushDraft()
+                    }
                     Lifecycle.Event.ON_START -> {
                         val away = SystemClock.elapsedRealtime() - backgroundedAt
                         if (backgroundedAt != 0L && away > LOCK_GRACE_MS) viewModel.lockApp()

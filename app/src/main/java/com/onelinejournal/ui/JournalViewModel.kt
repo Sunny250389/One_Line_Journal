@@ -40,6 +40,9 @@ private const val USER_NAME_KEY = "user_name"
 private const val MAX_NAME_LENGTH = 20
 private const val PAGE_VIEW_KEY = "page_view_enabled"
 private const val PUSH_DEBOUNCE_MS = 1_500L
+private const val DRAFT_TEXT_KEY = "draft_text"
+private const val DRAFT_DATE_KEY = "draft_date"
+private const val DRAFT_SAVE_DEBOUNCE_MS = 500L
 
 enum class JournalFont(val label: String) {
     Sans("Sans"),
@@ -111,6 +114,7 @@ class JournalViewModel(
     private val preferences: SharedPreferences,
     private val ownerPreferences: SharedPreferences,
     private val backupRepository: JournalBackupRepository,
+    private val draftPreferences: SharedPreferences,
     private val scheduleBackupRetry: () -> Unit = {},
     private val cancelBackupRetry: () -> Unit = {}
 ) : ViewModel() {
@@ -146,6 +150,7 @@ class JournalViewModel(
     private val backupError = MutableStateFlow<String?>(null)
     private val pendingSwitchFrom = MutableStateFlow<String?>(null)
     private var pushJob: Job? = null
+    private var draftSaveJob: Job? = null
     private var completedStartupSync = false
 
     private val settingsState = combine(
@@ -232,7 +237,62 @@ class JournalViewModel(
 
     fun onInputChanged(value: String) {
         // Page view (diary) has no character limit; the classic one-liner keeps its 120.
-        draft.value = if (pageView.value) value else value.take(MAX_ENTRY_LENGTH)
+        draft.value = when {
+            pageView.value || value.length <= MAX_ENTRY_LENGTH -> value
+            // A long page-view entry opened in classic mode must never be cut silently. It can
+            // be shortened by hand, but not grown, and can't be saved until it fits.
+            value.length <= (draft.value ?: uiState.value.input).length -> value
+            (draft.value ?: uiState.value.input).length > MAX_ENTRY_LENGTH -> return
+            else -> value.take(MAX_ENTRY_LENGTH)
+        }
+        scheduleDraftSave()
+    }
+
+    private fun scheduleDraftSave() {
+        draftSaveJob?.cancel()
+        draftSaveJob = viewModelScope.launch {
+            delay(DRAFT_SAVE_DEBOUNCE_MS)
+            persistDraft()
+        }
+    }
+
+    /** Writes any pending draft now, so it survives Android killing the app in the background. */
+    fun flushDraft() {
+        draftSaveJob?.cancel()
+        persistDraft()
+    }
+
+    private fun persistDraft() {
+        val text = draft.value
+        draftPreferences.edit().apply {
+            if (text == null) {
+                remove(DRAFT_TEXT_KEY)
+                remove(DRAFT_DATE_KEY)
+            } else {
+                putString(DRAFT_TEXT_KEY, text)
+                putString(DRAFT_DATE_KEY, todayKey())
+            }
+        }.apply()
+    }
+
+    private fun discardDraft() {
+        draftSaveJob?.cancel()
+        draft.value = null
+        persistDraft()
+    }
+
+    // An earlier day's draft comes back only if it can't cover an entry already saved today.
+    private suspend fun restoreDraft() {
+        val text = draftPreferences.getString(DRAFT_TEXT_KEY, null) ?: return
+        val today = todayKey()
+        val isTodays = draftPreferences.getString(DRAFT_DATE_KEY, null) == today
+        val hasTodaysEntry = repository.getEntries().any { it.date == today }
+        if (draft.value != null) return
+        if (isTodays || !hasTodaysEntry) {
+            draft.value = text
+        } else {
+            discardDraft()
+        }
     }
 
     fun saveTodayEntry() {
@@ -250,7 +310,7 @@ class JournalViewModel(
                     isFavorite = current.todaysEntry?.isFavorite ?: false
                 )
             )
-            draft.value = null
+            discardDraft()
             isSaving.value = false
             schedulePush()
         }
@@ -362,7 +422,11 @@ class JournalViewModel(
             backupRepository.pullReplace(allowUi)
             ownerPreferences.edit().putString(OWNER_EMAIL_KEY, email).apply()
         }
-        if (replaced) pendingSwitchFrom.value = null
+        if (replaced) {
+            // The draft belongs to the previous account's journal.
+            discardDraft()
+            pendingSwitchFrom.value = null
+        }
     }
 
     private fun ownsLocalJournal(): Boolean {
@@ -496,6 +560,7 @@ class JournalViewModel(
 
     init {
         preferences.registerOnSharedPreferenceChangeListener(prefsListener)
+        viewModelScope.launch { restoreDraft() }
     }
 
     override fun onCleared() {
@@ -541,6 +606,7 @@ class JournalViewModelFactory(
     private val preferences: SharedPreferences,
     private val ownerPreferences: SharedPreferences,
     private val backupRepository: JournalBackupRepository,
+    private val draftPreferences: SharedPreferences,
     private val scheduleBackupRetry: () -> Unit,
     private val cancelBackupRetry: () -> Unit
 ) : ViewModelProvider.Factory {
@@ -552,6 +618,7 @@ class JournalViewModelFactory(
                 preferences,
                 ownerPreferences,
                 backupRepository,
+                draftPreferences,
                 scheduleBackupRetry,
                 cancelBackupRetry
             ) as T
