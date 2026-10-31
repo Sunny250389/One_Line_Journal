@@ -1,6 +1,5 @@
 package com.onelinejournal.ui
 
-import android.app.TimePickerDialog
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
@@ -16,6 +15,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -24,14 +24,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import com.onelinejournal.ui.theme.WarningAmber
 import kotlin.math.PI
 import kotlin.math.ceil
+import kotlin.math.cos
 import kotlin.math.sin
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.Image
@@ -84,10 +91,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.onelinejournal.R
-import com.onelinejournal.ReminderScheduler
 import com.onelinejournal.data.JournalEntry
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -111,6 +118,25 @@ fun HomeScreen(
             .statusBarsPadding()
             .navigationBarsPadding()
     ) { innerPadding ->
+        if (state.pageView) {
+            DiaryPage(
+                state = state,
+                onInputChanged = viewModel::onInputChanged,
+                onSave = {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                    viewModel.saveTodayEntry()
+                },
+                onToggleFavorite = viewModel::toggleFavorite,
+                onOpenDayInHistory = onOpenDayInHistory,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            )
+            return@Scaffold
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -119,23 +145,7 @@ fun HomeScreen(
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            AppHeader(
-                reminderTime = state.reminderTime,
-                onReminderClick = {
-                    val now = java.util.Calendar.getInstance()
-                    TimePickerDialog(
-                        context,
-                        { _, hour, minute ->
-                            val time = "%02d:%02d".format(hour, minute)
-                            viewModel.setReminderTime(time)
-                            ReminderScheduler.scheduleDaily(context, time)
-                        },
-                        now.get(java.util.Calendar.HOUR_OF_DAY),
-                        now.get(java.util.Calendar.MINUTE),
-                        false
-                    ).show()
-                },
-            )
+            AppHeader()
 
             Text(
                 text = "Home",
@@ -185,10 +195,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun AppHeader(
-    reminderTime: String?,
-    onReminderClick: () -> Unit
-) {
+private fun AppHeader() {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -208,21 +215,6 @@ private fun AppHeader(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (reminderTime != null) {
-                Text(
-                    text = reminderTime,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            IconButton(onClick = onReminderClick) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_notifications),
-                    contentDescription = "Set reminder"
-                )
-            }
         }
     }
 }
@@ -260,36 +252,91 @@ private fun StreakCard(streakCount: Int) {
             contentAlignment = Alignment.Center
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(
-                    space = 48.dp,
-                    alignment = Alignment.CenterHorizontally
-                )
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Column(horizontalAlignment = Alignment.Start) {
-                    Text(
-                        text = "DAILY STREAK",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.82f),
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "$animatedStreak Day${if (streakCount == 1) "" else "s"}",
-                        style = MaterialTheme.typography.displaySmall,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.82f)
-                    )
+                LiveClock()
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(32.dp)
+                ) {
+                    Column(horizontalAlignment = Alignment.Start) {
+                        Text(
+                            text = "DAILY STREAK",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.82f),
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "$animatedStreak Day${if (streakCount == 1) "" else "s"}",
+                            style = MaterialTheme.typography.displaySmall,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.82f)
+                        )
+                    }
+                    StreakFlame(streak = streakCount)
                 }
-                StreakFlame(streak = streakCount)
             }
         }
     }
+}
+
+/** The current time, refreshed every second. */
+@Composable
+internal fun rememberCurrentTime(): State<LocalTime> {
+    return produceState(initialValue = LocalTime.now()) {
+        while (true) {
+            value = LocalTime.now()
+            delay(1_000)
+        }
+    }
+}
+
+@Composable
+private fun LiveClock() {
+    val now by rememberCurrentTime()
+    Canvas(modifier = Modifier.size(56.dp)) {
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val radius = size.minDimension / 2f
+        val hourAngle = ((now.hour % 12) + now.minute / 60f) * 30f
+        val minuteAngle = (now.minute + now.second / 60f) * 6f
+        val secondAngle = now.second * 6f
+
+        drawCircle(color = Color.White.copy(alpha = 0.18f), radius = radius, center = center)
+        drawCircle(
+            color = Color.White.copy(alpha = 0.8f),
+            radius = radius - 1.dp.toPx(),
+            center = center,
+            style = Stroke(width = 2.dp.toPx())
+        )
+        drawClockHand(center, radius * 0.5f, hourAngle, 3.dp.toPx(), Color.White)
+        drawClockHand(center, radius * 0.75f, minuteAngle, 2.dp.toPx(), Color.White)
+        drawClockHand(center, radius * 0.85f, secondAngle, 1.dp.toPx(), WarningAmber)
+    }
+}
+
+/** Draws a hand from the centre outwards; 0 degrees points to twelve o'clock. */
+private fun DrawScope.drawClockHand(
+    center: Offset,
+    length: Float,
+    angleDegrees: Float,
+    strokeWidth: Float,
+    color: Color
+) {
+    val radians = Math.toRadians((angleDegrees - 90f).toDouble())
+    val end = Offset(
+        center.x + length * cos(radians).toFloat(),
+        center.y + length * sin(radians).toFloat()
+    )
+    drawLine(color = color, start = center, end = end, strokeWidth = strokeWidth, cap = StrokeCap.Round)
 }
 
 @Composable
@@ -463,7 +510,7 @@ private fun JournalEditorCard(
 }
 
 @Composable
-private fun JournalCalendar(
+internal fun JournalCalendar(
     entries: List<JournalEntry>,
     onDayClick: (LocalDate, Boolean) -> Unit
 ) {
