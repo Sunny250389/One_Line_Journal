@@ -79,7 +79,9 @@ data class JournalUiState(
     val signedInEmail: String? = null,
     val lastBackupAt: Long? = null,
     val backupSyncState: BackupSyncState = BackupSyncState.Idle,
-    val backupError: String? = null
+    val backupError: String? = null,
+    /** Account whose journal is on this device while a different account is signed in. */
+    val pendingSwitchFrom: String? = null
 ) {
     val charactersRemaining: Int = MAX_ENTRY_LENGTH - input.length
     val canSave: Boolean =
@@ -100,7 +102,8 @@ private data class BackupUi(
     val signedInEmail: String?,
     val lastBackupAt: Long?,
     val backupSyncState: BackupSyncState,
-    val backupError: String?
+    val backupError: String?,
+    val pendingSwitchFrom: String?
 )
 
 class JournalViewModel(
@@ -141,6 +144,7 @@ class JournalViewModel(
     private val historyFocus = MutableStateFlow<String?>(null)
     private val backupSyncState = MutableStateFlow(BackupSyncState.Idle)
     private val backupError = MutableStateFlow<String?>(null)
+    private val pendingSwitchFrom = MutableStateFlow<String?>(null)
     private var pushJob: Job? = null
     private var completedStartupSync = false
 
@@ -166,13 +170,15 @@ class JournalViewModel(
         signedInEmail,
         lastBackupAt,
         backupSyncState,
-        backupError
-    ) { email, lastBackup, syncState, error ->
+        backupError,
+        pendingSwitchFrom
+    ) { email, lastBackup, syncState, error, switchFrom ->
         BackupUi(
             signedInEmail = email,
             lastBackupAt = lastBackup,
             backupSyncState = syncState,
-            backupError = error
+            backupError = error,
+            pendingSwitchFrom = switchFrom
         )
     }
 
@@ -204,7 +210,8 @@ class JournalViewModel(
             signedInEmail = backup.signedInEmail,
             lastBackupAt = backup.lastBackupAt,
             backupSyncState = backup.backupSyncState,
-            backupError = backup.backupError
+            backupError = backup.backupError,
+            pendingSwitchFrom = backup.pendingSwitchFrom
         )
     }.stateIn(
         scope = viewModelScope,
@@ -322,18 +329,47 @@ class JournalViewModel(
         backupError.value = null
 
         val previousOwner = currentOwnerEmail()
-        val switchedAccount = previousOwner != null && previousOwner != email
+        if (previousOwner != null && previousOwner != email) {
+            beginAccountSwitch(previousOwner)
+            return
+        }
         ownerPreferences.edit().putString(OWNER_EMAIL_KEY, email).apply()
 
         viewModelScope.launch {
-            runBackup {
-                if (switchedAccount) {
-                    backupRepository.pullReplace(allowUi = false)
-                } else {
-                    backupRepository.pullMergePush(allowUi = false)
-                }
-            }
+            runBackup { backupRepository.pullMergePush(allowUi = false) }
         }
+    }
+
+    /** The user accepted replacing this device's journal with the signed-in account's. */
+    fun confirmAccountSwitch() {
+        if (pendingSwitchFrom.value == null || backupSyncState.value == BackupSyncState.Syncing) return
+        viewModelScope.launch { replaceWithSignedInAccount(allowUi = true) }
+    }
+
+    // Local entries are only discarded after the user confirms; an empty device has nothing to lose.
+    private fun beginAccountSwitch(previousOwner: String) {
+        pendingSwitchFrom.value = previousOwner
+        viewModelScope.launch {
+            if (repository.getEntries().isEmpty()) replaceWithSignedInAccount(allowUi = false)
+        }
+    }
+
+    // The owner only changes once the replace has succeeded. Until then the local entries still
+    // belong to the previous account, and ownsLocalJournal() keeps them out of the new Drive.
+    private suspend fun replaceWithSignedInAccount(allowUi: Boolean) {
+        val email = signedInEmail.value ?: return
+        val replaced = runBackup(retryOnFailure = false) {
+            backupRepository.pullReplace(allowUi)
+            ownerPreferences.edit().putString(OWNER_EMAIL_KEY, email).apply()
+        }
+        if (replaced) pendingSwitchFrom.value = null
+    }
+
+    private fun ownsLocalJournal(): Boolean {
+        val email = signedInEmail.value
+        if (email.isNullOrBlank()) return false
+        val owner = currentOwnerEmail()
+        return owner == null || owner == email
     }
 
     // The owner marker lives in its own prefs file so Android backup restores it together
@@ -353,6 +389,7 @@ class JournalViewModel(
         lastBackupAt.value = null
         backupSyncState.value = BackupSyncState.Idle
         backupError.value = null
+        pendingSwitchFrom.value = null
         cancelBackupRetry()
         preferences.edit().remove(LAST_BACKUP_KEY).putBoolean(PENDING_BACKUP_KEY, false).apply()
     }
@@ -372,18 +409,24 @@ class JournalViewModel(
         if (!currentEmail.isNullOrBlank() && currentOwnerEmail() == null) {
             ownerPreferences.edit().putString(OWNER_EMAIL_KEY, currentEmail).apply()
         }
+        // An unfinished switch (app killed or replace failed) asks again instead of syncing.
+        val owner = currentOwnerEmail()
+        if (!currentEmail.isNullOrBlank() && owner != null && owner != currentEmail) {
+            beginAccountSwitch(owner)
+            return
+        }
         syncFromCloud()
     }
 
     fun syncFromCloud() {
-        if (signedInEmail.value.isNullOrBlank()) return
+        if (!ownsLocalJournal()) return
         viewModelScope.launch {
             runBackup { backupRepository.pullMergePush(allowUi = false) }
         }
     }
 
     fun backupNow() {
-        if (signedInEmail.value.isNullOrBlank()) return
+        if (!ownsLocalJournal()) return
         pushJob?.cancel()
         viewModelScope.launch {
             runBackup { backupRepository.pullMergePush(allowUi = true) }
@@ -391,7 +434,7 @@ class JournalViewModel(
     }
 
     private fun schedulePush() {
-        if (signedInEmail.value.isNullOrBlank()) return
+        if (!ownsLocalJournal()) return
         pushJob?.cancel()
         pushJob = viewModelScope.launch {
             delay(PUSH_DEBOUNCE_MS)
@@ -399,7 +442,8 @@ class JournalViewModel(
         }
     }
 
-    private suspend fun runBackup(block: suspend () -> Unit) {
+    /** Returns whether [block] succeeded. */
+    private suspend fun runBackup(retryOnFailure: Boolean = true, block: suspend () -> Unit): Boolean {
         backupSyncState.value = BackupSyncState.Syncing
         backupError.value = null
         try {
@@ -412,14 +456,15 @@ class JournalViewModel(
                 .apply()
             cancelBackupRetry()
             backupSyncState.value = BackupSyncState.Success
+            return true
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
             // Log the failure kind only; never journal text.
             Log.w(LOG_TAG, "Backup failed: ${error.javaClass.simpleName} ${error.message}")
             // Sign-in problems can't be fixed by waiting, so only queue a retry for the rest.
-            val willRetry = error !is DriveAuthRequiredException
-            preferences.edit().putBoolean(PENDING_BACKUP_KEY, true).apply()
+            val willRetry = retryOnFailure && error !is DriveAuthRequiredException
+            if (retryOnFailure) preferences.edit().putBoolean(PENDING_BACKUP_KEY, true).apply()
             if (willRetry) scheduleBackupRetry()
             backupSyncState.value = BackupSyncState.Error
             val reason = when (error) {
@@ -429,6 +474,7 @@ class JournalViewModel(
                 else -> (error.message ?: "Backup failed").trimEnd('.') + "."
             }
             backupError.value = reason + if (willRetry) " We'll retry automatically." else ""
+            return false
         }
     }
 
