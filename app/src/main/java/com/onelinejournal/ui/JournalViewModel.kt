@@ -40,6 +40,9 @@ private const val USER_NAME_KEY = "user_name"
 private const val MAX_NAME_LENGTH = 20
 private const val PAGE_VIEW_KEY = "page_view_enabled"
 private const val PUSH_DEBOUNCE_MS = 1_500L
+private const val DRAFT_TEXT_KEY = "draft_text"
+private const val DRAFT_DATE_KEY = "draft_date"
+private const val DRAFT_SAVE_DEBOUNCE_MS = 500L
 
 enum class JournalFont(val label: String) {
     Sans("Sans"),
@@ -79,7 +82,9 @@ data class JournalUiState(
     val signedInEmail: String? = null,
     val lastBackupAt: Long? = null,
     val backupSyncState: BackupSyncState = BackupSyncState.Idle,
-    val backupError: String? = null
+    val backupError: String? = null,
+    /** Account whose journal is on this device while a different account is signed in. */
+    val pendingSwitchFrom: String? = null
 ) {
     val charactersRemaining: Int = MAX_ENTRY_LENGTH - input.length
     val canSave: Boolean =
@@ -100,7 +105,8 @@ private data class BackupUi(
     val signedInEmail: String?,
     val lastBackupAt: Long?,
     val backupSyncState: BackupSyncState,
-    val backupError: String?
+    val backupError: String?,
+    val pendingSwitchFrom: String?
 )
 
 class JournalViewModel(
@@ -108,6 +114,7 @@ class JournalViewModel(
     private val preferences: SharedPreferences,
     private val ownerPreferences: SharedPreferences,
     private val backupRepository: JournalBackupRepository,
+    private val draftPreferences: SharedPreferences,
     private val scheduleBackupRetry: () -> Unit = {},
     private val cancelBackupRetry: () -> Unit = {}
 ) : ViewModel() {
@@ -141,7 +148,9 @@ class JournalViewModel(
     private val historyFocus = MutableStateFlow<String?>(null)
     private val backupSyncState = MutableStateFlow(BackupSyncState.Idle)
     private val backupError = MutableStateFlow<String?>(null)
+    private val pendingSwitchFrom = MutableStateFlow<String?>(null)
     private var pushJob: Job? = null
+    private var draftSaveJob: Job? = null
     private var completedStartupSync = false
 
     private val settingsState = combine(
@@ -166,13 +175,15 @@ class JournalViewModel(
         signedInEmail,
         lastBackupAt,
         backupSyncState,
-        backupError
-    ) { email, lastBackup, syncState, error ->
+        backupError,
+        pendingSwitchFrom
+    ) { email, lastBackup, syncState, error, switchFrom ->
         BackupUi(
             signedInEmail = email,
             lastBackupAt = lastBackup,
             backupSyncState = syncState,
-            backupError = error
+            backupError = error,
+            pendingSwitchFrom = switchFrom
         )
     }
 
@@ -204,7 +215,8 @@ class JournalViewModel(
             signedInEmail = backup.signedInEmail,
             lastBackupAt = backup.lastBackupAt,
             backupSyncState = backup.backupSyncState,
-            backupError = backup.backupError
+            backupError = backup.backupError,
+            pendingSwitchFrom = backup.pendingSwitchFrom
         )
     }.stateIn(
         scope = viewModelScope,
@@ -225,7 +237,62 @@ class JournalViewModel(
 
     fun onInputChanged(value: String) {
         // Page view (diary) has no character limit; the classic one-liner keeps its 120.
-        draft.value = if (pageView.value) value else value.take(MAX_ENTRY_LENGTH)
+        draft.value = when {
+            pageView.value || value.length <= MAX_ENTRY_LENGTH -> value
+            // A long page-view entry opened in classic mode must never be cut silently. It can
+            // be shortened by hand, but not grown, and can't be saved until it fits.
+            value.length <= (draft.value ?: uiState.value.input).length -> value
+            (draft.value ?: uiState.value.input).length > MAX_ENTRY_LENGTH -> return
+            else -> value.take(MAX_ENTRY_LENGTH)
+        }
+        scheduleDraftSave()
+    }
+
+    private fun scheduleDraftSave() {
+        draftSaveJob?.cancel()
+        draftSaveJob = viewModelScope.launch {
+            delay(DRAFT_SAVE_DEBOUNCE_MS)
+            persistDraft()
+        }
+    }
+
+    /** Writes any pending draft now, so it survives Android killing the app in the background. */
+    fun flushDraft() {
+        draftSaveJob?.cancel()
+        persistDraft()
+    }
+
+    private fun persistDraft() {
+        val text = draft.value
+        draftPreferences.edit().apply {
+            if (text == null) {
+                remove(DRAFT_TEXT_KEY)
+                remove(DRAFT_DATE_KEY)
+            } else {
+                putString(DRAFT_TEXT_KEY, text)
+                putString(DRAFT_DATE_KEY, todayKey())
+            }
+        }.apply()
+    }
+
+    private fun discardDraft() {
+        draftSaveJob?.cancel()
+        draft.value = null
+        persistDraft()
+    }
+
+    // An earlier day's draft comes back only if it can't cover an entry already saved today.
+    private suspend fun restoreDraft() {
+        val text = draftPreferences.getString(DRAFT_TEXT_KEY, null) ?: return
+        val today = todayKey()
+        val isTodays = draftPreferences.getString(DRAFT_DATE_KEY, null) == today
+        val hasTodaysEntry = repository.getEntries().any { it.date == today }
+        if (draft.value != null) return
+        if (isTodays || !hasTodaysEntry) {
+            draft.value = text
+        } else {
+            discardDraft()
+        }
     }
 
     fun saveTodayEntry() {
@@ -243,7 +310,7 @@ class JournalViewModel(
                     isFavorite = current.todaysEntry?.isFavorite ?: false
                 )
             )
-            draft.value = null
+            discardDraft()
             isSaving.value = false
             schedulePush()
         }
@@ -322,18 +389,51 @@ class JournalViewModel(
         backupError.value = null
 
         val previousOwner = currentOwnerEmail()
-        val switchedAccount = previousOwner != null && previousOwner != email
+        if (previousOwner != null && previousOwner != email) {
+            beginAccountSwitch(previousOwner)
+            return
+        }
         ownerPreferences.edit().putString(OWNER_EMAIL_KEY, email).apply()
 
         viewModelScope.launch {
-            runBackup {
-                if (switchedAccount) {
-                    backupRepository.pullReplace(allowUi = false)
-                } else {
-                    backupRepository.pullMergePush(allowUi = false)
-                }
-            }
+            runBackup { backupRepository.pullMergePush(allowUi = false) }
         }
+    }
+
+    /** The user accepted replacing this device's journal with the signed-in account's. */
+    fun confirmAccountSwitch() {
+        if (pendingSwitchFrom.value == null || backupSyncState.value == BackupSyncState.Syncing) return
+        viewModelScope.launch { replaceWithSignedInAccount(allowUi = true) }
+    }
+
+    // Local entries are only discarded after the user confirms; an empty device has nothing to lose.
+    private fun beginAccountSwitch(previousOwner: String) {
+        pendingSwitchFrom.value = previousOwner
+        viewModelScope.launch {
+            if (repository.getEntries().isEmpty()) replaceWithSignedInAccount(allowUi = false)
+        }
+    }
+
+    // The owner only changes once the replace has succeeded. Until then the local entries still
+    // belong to the previous account, and ownsLocalJournal() keeps them out of the new Drive.
+    private suspend fun replaceWithSignedInAccount(allowUi: Boolean) {
+        val email = signedInEmail.value ?: return
+        val replaced = runBackup(retryOnFailure = false) {
+            backupRepository.pullReplace(allowUi)
+            ownerPreferences.edit().putString(OWNER_EMAIL_KEY, email).apply()
+        }
+        if (replaced) {
+            // The draft belongs to the previous account's journal.
+            discardDraft()
+            pendingSwitchFrom.value = null
+        }
+    }
+
+    private fun ownsLocalJournal(): Boolean {
+        val email = signedInEmail.value
+        if (email.isNullOrBlank()) return false
+        val owner = currentOwnerEmail()
+        return owner == null || owner == email
     }
 
     // The owner marker lives in its own prefs file so Android backup restores it together
@@ -353,6 +453,7 @@ class JournalViewModel(
         lastBackupAt.value = null
         backupSyncState.value = BackupSyncState.Idle
         backupError.value = null
+        pendingSwitchFrom.value = null
         cancelBackupRetry()
         preferences.edit().remove(LAST_BACKUP_KEY).putBoolean(PENDING_BACKUP_KEY, false).apply()
     }
@@ -372,18 +473,24 @@ class JournalViewModel(
         if (!currentEmail.isNullOrBlank() && currentOwnerEmail() == null) {
             ownerPreferences.edit().putString(OWNER_EMAIL_KEY, currentEmail).apply()
         }
+        // An unfinished switch (app killed or replace failed) asks again instead of syncing.
+        val owner = currentOwnerEmail()
+        if (!currentEmail.isNullOrBlank() && owner != null && owner != currentEmail) {
+            beginAccountSwitch(owner)
+            return
+        }
         syncFromCloud()
     }
 
     fun syncFromCloud() {
-        if (signedInEmail.value.isNullOrBlank()) return
+        if (!ownsLocalJournal()) return
         viewModelScope.launch {
             runBackup { backupRepository.pullMergePush(allowUi = false) }
         }
     }
 
     fun backupNow() {
-        if (signedInEmail.value.isNullOrBlank()) return
+        if (!ownsLocalJournal()) return
         pushJob?.cancel()
         viewModelScope.launch {
             runBackup { backupRepository.pullMergePush(allowUi = true) }
@@ -391,7 +498,7 @@ class JournalViewModel(
     }
 
     private fun schedulePush() {
-        if (signedInEmail.value.isNullOrBlank()) return
+        if (!ownsLocalJournal()) return
         pushJob?.cancel()
         pushJob = viewModelScope.launch {
             delay(PUSH_DEBOUNCE_MS)
@@ -399,7 +506,8 @@ class JournalViewModel(
         }
     }
 
-    private suspend fun runBackup(block: suspend () -> Unit) {
+    /** Returns whether [block] succeeded. */
+    private suspend fun runBackup(retryOnFailure: Boolean = true, block: suspend () -> Unit): Boolean {
         backupSyncState.value = BackupSyncState.Syncing
         backupError.value = null
         try {
@@ -412,14 +520,15 @@ class JournalViewModel(
                 .apply()
             cancelBackupRetry()
             backupSyncState.value = BackupSyncState.Success
+            return true
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
             // Log the failure kind only; never journal text.
             Log.w(LOG_TAG, "Backup failed: ${error.javaClass.simpleName} ${error.message}")
             // Sign-in problems can't be fixed by waiting, so only queue a retry for the rest.
-            val willRetry = error !is DriveAuthRequiredException
-            preferences.edit().putBoolean(PENDING_BACKUP_KEY, true).apply()
+            val willRetry = retryOnFailure && error !is DriveAuthRequiredException
+            if (retryOnFailure) preferences.edit().putBoolean(PENDING_BACKUP_KEY, true).apply()
             if (willRetry) scheduleBackupRetry()
             backupSyncState.value = BackupSyncState.Error
             val reason = when (error) {
@@ -429,6 +538,7 @@ class JournalViewModel(
                 else -> (error.message ?: "Backup failed").trimEnd('.') + "."
             }
             backupError.value = reason + if (willRetry) " We'll retry automatically." else ""
+            return false
         }
     }
 
@@ -450,6 +560,7 @@ class JournalViewModel(
 
     init {
         preferences.registerOnSharedPreferenceChangeListener(prefsListener)
+        viewModelScope.launch { restoreDraft() }
     }
 
     override fun onCleared() {
@@ -495,6 +606,7 @@ class JournalViewModelFactory(
     private val preferences: SharedPreferences,
     private val ownerPreferences: SharedPreferences,
     private val backupRepository: JournalBackupRepository,
+    private val draftPreferences: SharedPreferences,
     private val scheduleBackupRetry: () -> Unit,
     private val cancelBackupRetry: () -> Unit
 ) : ViewModelProvider.Factory {
@@ -506,6 +618,7 @@ class JournalViewModelFactory(
                 preferences,
                 ownerPreferences,
                 backupRepository,
+                draftPreferences,
                 scheduleBackupRetry,
                 cancelBackupRetry
             ) as T

@@ -1,6 +1,9 @@
 package com.onelinejournal.ui
 
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -129,6 +132,54 @@ fun JournalApp(
             )
         }
     }
+
+    val state by viewModel.uiState.collectAsState()
+    state.pendingSwitchFrom?.let { previousAccount ->
+        AccountSwitchDialog(
+            previousAccount = previousAccount,
+            newAccount = state.signedInEmail.orEmpty(),
+            hasLocalEntries = state.entries.isNotEmpty(),
+            isWorking = state.backupSyncState == BackupSyncState.Syncing,
+            error = state.backupError,
+            onConfirm = viewModel::confirmAccountSwitch,
+            onCancel = onGoogleSignOut
+        )
+    }
+}
+
+/** Blocks the app until the user decides, so nothing is written while the journal may be replaced. */
+@Composable
+private fun AccountSwitchDialog(
+    previousAccount: String,
+    newAccount: String,
+    hasLocalEntries: Boolean,
+    isWorking: Boolean,
+    error: String?,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val message = when {
+        isWorking -> "Loading the journal for $newAccount..."
+        hasLocalEntries ->
+            "This device holds the journal from $previousAccount. Continuing replaces it with the " +
+                "journal backed up to $newAccount, and anything not yet backed up to " +
+                "$previousAccount is permanently deleted.\n\nTo keep those entries, cancel and " +
+                "log in with $previousAccount so they can back up first."
+        else -> "The journal for $newAccount hasn't been loaded yet."
+    }
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text("Switch Google account?") },
+        text = { Text(if (error != null && !isWorking) "$error\n\n$message" else message) },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = !isWorking) {
+                Text(if (hasLocalEntries) "Replace journal" else "Try again")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, enabled = !isWorking) { Text("Cancel") }
+        }
+    )
 }
 
 private enum class AppDestination(
