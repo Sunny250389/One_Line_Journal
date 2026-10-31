@@ -2,7 +2,7 @@
 
 ## Project overview
 
-A minimalist Android journaling app where users write one entry per day (max 120 characters). Built with Kotlin, Jetpack Compose, Room, and Google Drive backup.
+A minimalist Android journaling app where users write one entry per day (max 120 characters, or unlimited in the optional page view). Built with Kotlin, Jetpack Compose, Room, and Google Drive backup.
 
 **Package:** `com.onelinejournal`  
 **Min SDK:** 24 (Android 7.0) | **Target SDK:** 36  
@@ -17,8 +17,14 @@ A minimalist Android journaling app where users write one entry per day (max 120
 # Release build (requires keystore.properties — see keystore.properties.example)
 ./gradlew assembleRelease
 
+# Play Store bundle (raise versionCode first; Play rejects a repeat)
+./gradlew clean bundleRelease
+
 # Install on connected device
 ./gradlew installDebug
+
+# JVM tests
+./gradlew testDebugUnitTest
 ```
 
 ## Project structure
@@ -45,8 +51,10 @@ app/src/main/java/com/onelinejournal/
 └── ui/
     ├── JournalApp.kt            # NavHost with bottom navigation (Home/History/Favorites/Settings)
     ├── JournalViewModel.kt      # Single ViewModel for all screens; StateFlow-based UI state
-    ├── HomeScreen.kt            # Today's entry input + streak counter
-    ├── HistoryScreen.kt         # All entries by month
+    ├── HomeScreen.kt            # Today's entry input + streak counter; shows DiaryPage in page view
+    ├── DiaryPage.kt             # Page view: swipeable lined diary pages, one per day
+    ├── EntryDetailScreen.kt     # One entry on its own screen (opened in page view)
+    ├── HistoryScreen.kt         # All entries by month; also holds FavoritesScreen
     ├── SettingsScreen.kt        # Theme, font, reminder, Google backup controls
     ├── ShareCard.kt             # Shareable image card from an entry
     ├── ThemeColorMenu.kt        # Theme swatch row + font card row (JournalFontPicker)
@@ -57,6 +65,9 @@ app/src/main/java/com/onelinejournal/
         ├── Color.kt             # Token definitions
         ├── Theme.kt             # MaterialTheme wrapper; respects AccentTheme
         └── Type.kt              # Typography definitions
+
+app/src/test/java/com/onelinejournal/backup/
+└── CorruptBackupTest.kt         # JVM tests for backup parsing and sync, with a fake Drive
 ```
 
 ## Key design decisions
@@ -64,7 +75,8 @@ app/src/main/java/com/onelinejournal/
 - **One entry per day:** `JournalEntry.date` (format `yyyy-MM-dd`) is the primary key; saving overwrites the day.
 - **120-character limit:** Enforced in `JournalViewModel` (`MAX_ENTRY_LENGTH = 120`) for classic mode; page view has no limit. Classic mode never trims existing text: a longer entry can only be shortened by hand and can't be saved until it fits.
 - **Drafts:** Unsaved text is written to its own `journal_draft` prefs file (500 ms debounce, plus a flush on `ON_STOP`) and restored on launch, so it survives process death. The file isn't in the backup rules, so drafts never leave the device. Saving or completing an account switch discards the draft.
-- **Backup strategy:** Pull-merge-push via Google Drive `appDataFolder`. Conflict resolution uses `updatedAt` (latest wins). Backup is automatic — a push fires 1.5 s after any save/toggle (`PUSH_DEBOUNCE_MS`), on app start, and on sign-in. The always-visible `Backup now` button was removed; Settings now shows a `Retry backup` button only after a failed sync (`BackupSyncState.Error`), since failed pushes are not auto-retried (see Known gaps).
+- **Backup strategy:** Pull-merge-push via Google Drive `appDataFolder`. Conflict resolution uses `updatedAt` (latest wins). Backup is automatic — a push fires 1.5 s after any save/toggle (`PUSH_DEBOUNCE_MS`), on app start, and on sign-in. The always-visible `Backup now` button was removed; Settings shows a `Retry backup` button only after a failed sync (`BackupSyncState.Error`), alongside the automatic background retry (see Backup retry).
+- **Page view:** optional (`page_view_enabled` pref, Settings → Page view, off by default). Home becomes a `HorizontalPager` of diary pages, with page 0 as today and each later page one day earlier, back to the oldest entry. Only today is editable. Entries have no length limit in this mode, and tapping one in History or Favorites opens `EntryDetailScreen`.
 - **Account isolation:** `journal_owner_email` records which account local entries belong to. It lives in its own `journal_owner` prefs file (not `journal_settings`) so the backup rules can restore it together with the database — otherwise a restored journal could be merged into a different account. The old key in `journal_settings` is migrated on first read. Signing in as a *different* account shows a blocking confirmation (`AccountSwitchDialog`; skipped when the device has no entries). Confirming calls `pullReplace` (cloud wins, local discarded) instead of `pullMergePush`; cancelling signs the new account out and keeps the journal. The owner changes only after the replace succeeds, and while owner and signed-in account differ every push is blocked (`ownsLocalJournal`, `BackupWorker`), so one account's entries are never uploaded into another's Drive. An unfinished switch prompts again on the next app start. Guest → first sign-in still merges, which is the intended migration path. Drive authorization is pinned to the chosen account via `AuthorizationRequest.setAccount`, so a multi-account device can't authorize a different account than the one shown. Shared-card PNGs are purged from the cache on launch and before each share (`purgeSharedCards`). `DriveAppDataClient.cachedFileId` must be reset on account change — the file id is per-account and resolves to an unreadable file under a new token.
 - **Corrupt backup:** `JournalBackupJson.fromJson` throws `BackupCorruptException` with a fixed message, because org.json's messages quote the input and would leak journal text. A sync renames the bad file to `one_line_journal.corrupt.json` and uploads the local journal as the new backup. An account switch stops with the error instead, leaving local entries untouched.
 - **Streak:** Calculated in ViewModel from the sorted entry list; counts consecutive days ending today or yesterday.
@@ -78,7 +90,8 @@ app/src/main/java/com/onelinejournal/
 - **Entries are permanent by design:** there is deliberately no edit/delete for past entries; the Login card tells users "Entries are permanent, so write what you mean." Revisit with a confirmation dialog if users ask. Real deletion would need sync tombstones, since the backup merge is a union.
 - **Calendar → History:** tapping a Home calendar day that has an entry calls `viewModel.focusHistoryEntry(date)` and navigates to History, which scrolls to that card (accounting for the sticky month header) and flashes it; days without an entry show a toast, future days aren't tappable. The request is one-shot state in `historyFocusDate`, cleared by `consumeHistoryFocus()`.
 - **Editor box:** `JournalEditorCard` sizes the text field to 3-6 lines from the text size so a full 120-char entry shows without inner scrolling.
-- **Settings order:** Appearance (theme, font, sample, text size), Reminder, then Login last — compact enough to show without scrolling.
+- **Settings order:** Appearance (theme, font, sample, text size), Page view, Reminder, App lock, then Login last.
+- **Reminder:** set or cleared in Settings (the bell on Home is gone). `ReminderScheduler` uses `setAlarmClock`, falling back to `setAndAllowWhileIdle` if exact alarms aren't allowed, and `ReminderReceiver` arms the next day each time it fires.
 
 ## Privacy policy page
 
@@ -128,13 +141,20 @@ cat app/build/generated/res/resValues/debug/values/gradleResValues.xml
 
 - **Retry is best-effort.** Failed syncs retry in the background, but a sync that needs the user to sign in again can't (the user sees the sign-in message). The in-app debounced push can still be lost if the process is killed before it runs; the next app start's sync covers it.
 - **Backup logging is minimal.** Failures are logged (type + message), not structured; add a diagnostics screen if support needs it.
+- **Reminders stop after a reboot.** Nothing re-arms the alarm at boot, so reminders stop until the app is next opened.
+- **Share card overflow.** Very long page-view entries run off the card and over the branding. The card is also built on the main thread with no error handling.
+- **No maximum entry size in page view.** Long entries affect typing speed, memory and backup size.
+- **App lock doesn't encrypt data.** The database isn't encrypted, and the lock setting isn't restored with a backup, so a restored journal opens unlocked.
+- **Drive errors aren't reset.** A failed call doesn't clear the cached file id or token, so a deleted backup or revoked access keeps failing until restart or token expiry.
+- **Accessibility.** Home calendar days are 26 dp tap targets and read only the day number to screen readers.
 - **Few tests.** Only backup parsing and sync have JVM tests (`./gradlew testDebugUnitTest`). Don't run `connectedAndroidTest` on a phone with a real journal: it uninstalls the app afterwards, which deletes the data.
 
 ## Permissions
 
 - `INTERNET` — Google Drive backup
 - `POST_NOTIFICATIONS` — daily reminder notifications (Android 13+)
-- (Biometric/device-credential prompts and WorkManager need no extra permissions.)
+- `SCHEDULE_EXACT_ALARM` — on-time daily reminders (Android 12+, user can deny)
+- Added by libraries through manifest merging: `USE_BIOMETRIC` and `USE_FINGERPRINT` (app lock); `ACCESS_NETWORK_STATE`, `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED` and `FOREGROUND_SERVICE` (WorkManager)
 
 ## Screens
 
@@ -143,7 +163,8 @@ cat app/build/generated/res/resValues/debug/values/gradleResValues.xml
 | `home` | HomeScreen | Write today's entry, see streak |
 | `history` | HistoryScreen | Browse all past entries |
 | `favorites` | FavoritesScreen | Entries marked as favorite |
-| `settings` | SettingsScreen | Theme, font size, reminder time, Google Drive backup |
+| `entry/{date}` | EntryDetailScreen | Read one entry (opened in page view) |
+| `settings` | SettingsScreen | Theme, font size, page view, reminder time, app lock, Google Drive backup |
 
 ## Dependencies (notable)
 
@@ -157,6 +178,7 @@ cat app/build/generated/res/resValues/debug/values/gradleResValues.xml
 | WorkManager 2.9.1 | Background backup retry |
 | OkHttp 4.12.0 | Drive API calls |
 | Coroutines (Play Services) 1.9.0 | `await()` on Tasks |
+| JUnit 4.13.2 / org.json 20240303 | JVM tests only (`android.jar` only has `org.json` stubs) |
 
 ## Build environment
 

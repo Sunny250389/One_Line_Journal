@@ -1,7 +1,7 @@
 # One Line Journal
 
 A calm, minimalist journal for shy people: write **one line a day** (up to 120
-characters) and watch your streak grow. Built with Kotlin, Jetpack Compose and
+characters, or a full diary page with page view on) and watch your streak grow. Built with Kotlin, Jetpack Compose and
 Room. Journaling works fully offline and without an account; signing in just
 adds an automatic Google Drive backup.
 
@@ -20,7 +20,16 @@ adds an automatic Google Drive backup.
 - A month calendar: written days use your accent colour, missed days are soft red,
   today is ringed. Tap a day with an entry to jump to it in History; tap an empty
   past day to see a "No entry" note.
-- A bell button to set a daily reminder.
+- Unsaved text is kept as a draft on your device, so it comes back if the app is
+  closed before you save. Drafts are not backed up.
+
+### Page view (optional)
+Turn it on in Settings to show Home as a diary page: lined paper, no character
+limit, and the calendar in a pop-up. Swipe right to read earlier days. Past days
+are read-only. In History and Favorites, tap an entry to open it on its own screen.
+
+If you turn page view off, a longer entry stays whole. It can be shortened by hand
+but can't be saved until it fits in 120 characters.
 
 ### History and Favorites
 - Entries grouped by month under sticky headers, newest first, with readable dates
@@ -31,17 +40,20 @@ adds an automatic Google Drive backup.
 ### Settings
 - **Appearance:** 8 accent themes (Green by default), 5 fonts (Sans, Serif, Mono,
   Casual, Condensed) with live previews, a sample line, and a text-size slider.
-- **Reminder:** shows the daily reminder time (set from the bell on Home).
+- **Page view:** switch Home between the one-liner and the diary page.
+- **Reminder:** set or turn off the daily reminder time.
 - **App lock:** require fingerprint, face or phone PIN to open the app (off by default).
 - **Login:** see below.
 
 ### Reminders
-A daily notification at the time you choose. Tapping it opens the app.
+A daily notification at the time you choose. Tapping it opens the app. On Android
+12 and newer, the app may ask you to allow exact alarms so it arrives on time.
 
 ### App lock
 Turn it on in Settings to ask for your fingerprint, face or phone PIN when opening
-the app. It locks on a fresh start and after the app has been in the background
-for about 30 seconds. While it is on, screenshots and the recent-apps preview are
+the app. It locks on a fresh start and as soon as the app leaves the screen. The
+exceptions are screens the app opens itself, such as Google sign-in and the share
+sheet, unless you stay away for more than 2 minutes. While it is on, screenshots and the recent-apps preview are
 blocked so your entries stay private. If you later remove your phone's screen
 lock, the app lock switches itself off so you are never locked out.
 
@@ -55,9 +67,13 @@ With Google, backup is automatic: it runs on sign-in, on app start, and shortly
 after every save or favourite change. Entries are merged by last-updated time, so
 newer edits win. If a sync fails, it is retried automatically in the background
 (waiting for a connection, with growing delays), and a **Retry backup** button
-appears for a manual try. Signing in as
-a *different* Google account replaces the local journal with that account's
-backup, so one account's entries are never uploaded to another's Drive.
+appears for a manual try. If the backup file can't be read, it is kept under another
+name and a new backup is saved from your device.
+
+Signing in as a *different* Google account asks first. If you agree, the local
+journal is replaced by that account's backup, and anything not already backed up is
+deleted. If you cancel, that account is signed out and your journal stays. Either
+way, one account's entries are never uploaded to another's Drive.
 
 ## Privacy
 
@@ -70,7 +86,10 @@ ads. See [Privacy_Policy.txt](Privacy_Policy.txt).
 
 - If Google asks you to sign in again, the background retry can't fix that; sign in
   from Settings.
-- There are no automated tests yet.
+- Daily reminders stop after the phone restarts, until the app is next opened.
+- Only backup parsing and sync have automated tests.
+- While the Google project is unverified, only listed test users can log in with
+  Google. Everyone else sees an "Account Blocked" screen; login with name still works.
 
 ## Design decisions
 
@@ -92,6 +111,10 @@ your Android SDK path in `local.properties` (`sdk.dir=...`).
 ```
 
 The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+
+Run the JVM tests with `.\gradlew.bat testDebugUnitTest`. Don't run
+`connectedAndroidTest` on a phone with a real journal: it uninstalls the app
+afterwards, which deletes the data.
 
 ## Google Drive backup setup
 
@@ -138,7 +161,8 @@ Create a release keystore once:
 Copy `keystore.properties.example` to `keystore.properties` and replace the
 password values. `keystore.properties` and keystore files are ignored by Git.
 
-Build the Play Store bundle:
+Raise `versionCode` and `versionName` in `app/build.gradle.kts` for each upload,
+because Play rejects a version code it has already seen. Build the Play Store bundle:
 
 ```powershell
 .\gradlew.bat clean bundleRelease
